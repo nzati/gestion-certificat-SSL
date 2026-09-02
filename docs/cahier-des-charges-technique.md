@@ -29,7 +29,7 @@ C'est le seul écart au tout-no-code. Tout le reste ci-dessous est Airtable/Make
 
 ## 1. Schéma Airtable
 
-Une base **Vigie**, cinq tables.
+Une base **Vigie**, quatre tables. Créée et vérifiée via l'API Airtable — voir [`scripts/setup-airtable-base.js`](../scripts/setup-airtable-base.js) pour le détail exact des champs, et [`scripts/README.md`](../scripts/README.md) pour la base réellement déployée (ID, URL, ce qui reste à faire à la main).
 
 ### `Comptes`
 Un enregistrement = un client payant (TPE/PME ou agence/MSP).
@@ -50,7 +50,7 @@ Un enregistrement = un client payant (TPE/PME ou agence/MSP).
 | Numéro SMS alerte | Téléphone | Agence/MSP uniquement |
 | Domaines | Lien → `Domaines` | |
 | Clients finaux | Lien → `ClientsFinaux` | |
-| Date création | Date de création | auto |
+| Date création | Date de création | auto — l'API Airtable ne permet pas de créer ce type de champ, ajouté à la main (30 secondes) |
 
 ### `ClientsFinaux`
 Utilisé uniquement par les comptes `Agence/MSP` pour regrouper leurs propres clients.
