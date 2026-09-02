@@ -21,7 +21,7 @@ Make n'a pas de module natif pour :
 
 Il faut passer par un module **HTTP** appelant un service tiers :
 - **Certificat** : pas d'API gratuite fiable et stable dans la durée — la solution retenue est une **petite fonction serverless maison** en Node.js sur Vercel (runtime Node, pas Edge) qui ouvre une connexion TLS avec le module natif `tls` et lit le certificat du pair. Coût quasi nul, hors du monde "100% no-code" mais incontournable. Code et instructions de déploiement : [`serverless/`](../serverless/README.md). Cloudflare Workers a été écarté : son API de sockets TLS ne redonne que le flux d'octets déchiffré, pas les métadonnées du certificat.
-- **WHOIS domaine** : une API existante suffit (ex. WhoisXML API, Whoxy) — module HTTP classique, pas de code à écrire.
+- **WHOIS domaine** : pas besoin d'API payante — **RDAP**, le remplaçant standardisé du WHOIS, est gratuit, sans clé, et répond en JSON structuré au lieu de texte brut à parser. Un module HTTP Make suffit. Détails et limite réelle de couverture ci-dessous (scénario A, étape 4).
 
 C'est le seul écart au tout-no-code. Tout le reste ci-dessous est Airtable/Make/Softr/Stripe sans une ligne de code.
 
@@ -113,7 +113,10 @@ Déclenchement : planification, tous les jours à 06h00 (Europe/Paris).
 1. **Airtable — Rechercher des enregistrements** : vue `À vérifier aujourd'hui` de `Domaines`.
 2. **Itérateur** sur chaque domaine.
 3. **HTTP — Faire une requête** (en-tête `X-Vigie-Key: {{clé secrète}}`) vers la fonction serverless maison, déployée sur Vercel : `GET https://serverless-two-tau.vercel.app/api/cert?domain={{nom_domaine}}` → `{ domain, expires_at, issuer, error }`.
-4. **HTTP — Faire une requête** vers l'API WHOIS : `GET https://api-whois.example/lookup?domain={{nom_domaine}}` → `{ expires_at, registrar, error }`.
+4. **HTTP — Faire une requête** vers RDAP (suit la redirection automatiquement, gratuit, sans clé) : `GET https://rdap.org/domain/{{nom_domaine}}` avec en-têtes `Accept: application/rdap+json` **et `User-Agent: curl/8.21.0`** (testé : sans User-Agent "navigateur/curl", Verisign — le registre de `.com` — renvoie 403 à un client HTTP "machine" ; ça a fait échouer les tests avec le `fetch` par défaut de Node, le module HTTP de Make sera probablement concerné pareil).
+   - Réponse `200` : chercher dans le tableau `events` l'élément où `eventAction = "expiration"` et lire son `eventDate` — **Itérateur** sur `events` puis **Filtre** `eventAction = expiration` (l'ordre du tableau n'est pas garanti selon le registre, ne pas se fier à un index fixe). Le registrar est dans `entities` (rôle `registrar`), champ `fn` de son `vcardArray`.
+   - Réponse `404` avec `title: "No RDAP service is available for this resource"` : **pas d'échec** — certains registres n'exposent pas encore de RDAP public (confirmé en test sur `.de`, `.eu`, `.io` ; `.fr`, `.com`, `.net`, `.org` fonctionnent). Mettre `Domaines.Statut domaine = erreur` avec un message clair plutôt que de faire échouer le scénario.
+   - Réponse `404` avec un autre message : domaine probablement non enregistré ou mal orthographié — même traitement, statut `erreur`.
 5. **Outils — Définir des variables** : calcule `jours_restants_cert` et `jours_restants_domaine` (date d'expiration − aujourd'hui).
 6. **Airtable — Mettre à jour un enregistrement** : statut, dates, `Dernière vérification` = maintenant. Statut = `erreur` si l'étape 3 ou 4 a renvoyé une erreur (ex. domaine injoignable).
 7. **Router** à deux branches (certificat / domaine), chacune :
