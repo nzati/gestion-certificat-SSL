@@ -20,7 +20,7 @@ Make n'a pas de module natif pour :
 - interroger le WHOIS d'un nom de domaine.
 
 Il faut passer par un module **HTTP** appelant un service tiers :
-- **Certificat** : pas d'API gratuite fiable et stable dans la durée — le plus robuste est une **petite fonction serverless maison** (Cloudflare Workers ou Vercel Edge Function, ~30 lignes) qui ouvre le socket TLS et renvoie `{ expires_at, issuer }` en JSON. Coût quasi nul, hors du monde "100% no-code" mais incontournable.
+- **Certificat** : pas d'API gratuite fiable et stable dans la durée — la solution retenue est une **petite fonction serverless maison** en Node.js sur Vercel (runtime Node, pas Edge) qui ouvre une connexion TLS avec le module natif `tls` et lit le certificat du pair. Coût quasi nul, hors du monde "100% no-code" mais incontournable. Code et instructions de déploiement : [`serverless/`](../serverless/README.md). Cloudflare Workers a été écarté : son API de sockets TLS ne redonne que le flux d'octets déchiffré, pas les métadonnées du certificat.
 - **WHOIS domaine** : une API existante suffit (ex. WhoisXML API, Whoxy) — module HTTP classique, pas de code à écrire.
 
 C'est le seul écart au tout-no-code. Tout le reste ci-dessous est Airtable/Make/Softr/Stripe sans une ligne de code.
@@ -112,7 +112,7 @@ Déclenchement : planification, tous les jours à 06h00 (Europe/Paris).
 
 1. **Airtable — Rechercher des enregistrements** : vue `À vérifier aujourd'hui` de `Domaines`.
 2. **Itérateur** sur chaque domaine.
-3. **HTTP — Faire une requête** vers la fonction serverless maison : `GET https://vigie-checks.workers.dev/cert?domain={{nom_domaine}}` → `{ expires_at, issuer, error }`.
+3. **HTTP — Faire une requête** (en-tête `X-Vigie-Key: {{clé secrète}}`) vers la fonction serverless maison : `GET https://<votre-projet>.vercel.app/api/cert?domain={{nom_domaine}}` → `{ domain, expires_at, issuer, error }`.
 4. **HTTP — Faire une requête** vers l'API WHOIS : `GET https://api-whois.example/lookup?domain={{nom_domaine}}` → `{ expires_at, registrar, error }`.
 5. **Outils — Définir des variables** : calcule `jours_restants_cert` et `jours_restants_domaine` (date d'expiration − aujourd'hui).
 6. **Airtable — Mettre à jour un enregistrement** : statut, dates, `Dernière vérification` = maintenant. Statut = `erreur` si l'étape 3 ou 4 a renvoyé une erreur (ex. domaine injoignable).
@@ -183,7 +183,7 @@ Permissions Softr : **user groups** par `Offre` pour masquer "Clients" et "Rappo
 ## 5. Ordre de construction conseillé
 
 1. Base Airtable (tables + vues) — 1/2 journée.
-2. Fonction serverless de vérification de certificat (le seul bout de code) — 1/2 journée.
+2. Fonction serverless de vérification de certificat (le seul bout de code) — écrite et testée, voir [`serverless/`](../serverless/README.md) ; il ne reste qu'à la déployer sur Vercel.
 3. Scénario Make A (vérification quotidienne) en le testant sur 3-4 domaines réels — 1 journée.
 4. Softr : tableau de bord + connexion, branché en lecture seule sur Airtable — 1 journée.
 5. Scénario Make B (ajout de domaine) + formulaire Softr correspondant — 1/2 journée.

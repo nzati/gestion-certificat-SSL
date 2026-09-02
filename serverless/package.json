@@ -1,0 +1,9 @@
+{
+  "name": "vigie-cert-check",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Fonction serverless Vigie : verifie la date d'expiration d'un certificat TLS.",
+  "engines": {
+    "node": ">=18"
+  }
+}
