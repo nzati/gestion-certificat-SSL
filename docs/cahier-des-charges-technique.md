@@ -112,7 +112,7 @@ Déclenchement : planification, tous les jours à 06h00 (Europe/Paris).
 
 1. **Airtable — Rechercher des enregistrements** : vue `À vérifier aujourd'hui` de `Domaines`.
 2. **Itérateur** sur chaque domaine.
-3. **HTTP — Faire une requête** (en-tête `X-Vigie-Key: {{clé secrète}}`) vers la fonction serverless maison : `GET https://<votre-projet>.vercel.app/api/cert?domain={{nom_domaine}}` → `{ domain, expires_at, issuer, error }`.
+3. **HTTP — Faire une requête** (en-tête `X-Vigie-Key: {{clé secrète}}`) vers la fonction serverless maison, déployée sur Vercel : `GET https://serverless-two-tau.vercel.app/api/cert?domain={{nom_domaine}}` → `{ domain, expires_at, issuer, error }`.
 4. **HTTP — Faire une requête** vers l'API WHOIS : `GET https://api-whois.example/lookup?domain={{nom_domaine}}` → `{ expires_at, registrar, error }`.
 5. **Outils — Définir des variables** : calcule `jours_restants_cert` et `jours_restants_domaine` (date d'expiration − aujourd'hui).
 6. **Airtable — Mettre à jour un enregistrement** : statut, dates, `Dernière vérification` = maintenant. Statut = `erreur` si l'étape 3 ou 4 a renvoyé une erreur (ex. domaine injoignable).

@@ -14,25 +14,27 @@ node test-local.js github.com
 
 Affiche le JSON `{ domain, expires_at, issued_at, issuer, subject, checked_at }`, ou une erreur explicite si le domaine ne répond pas.
 
-## Déployer sur Vercel
+## Déployée
 
-```bash
-npm install -g vercel   # une seule fois
-vercel login            # une seule fois
-vercel                  # depuis ce dossier serverless/
+Projet Vercel `jacques8/serverless`, en production sur :
+
+```
+https://serverless-two-tau.vercel.app
 ```
 
-Puis dans les réglages du projet Vercel (Settings → Environment Variables), ajoutez :
+La clé `VIGIE_API_KEY` est en variable d'environnement du projet Vercel (Settings → Environment Variables, valeur masquée) et en local dans `serverless/.env` (non versionné). Pas d'autre copie — si elle est perdue, il faut en régénérer une (`openssl rand -hex 32`) et la remettre à jour aux deux endroits, puis redéployer (`vercel --prod`).
 
-- `VIGIE_API_KEY` — une clé secrète que vous choisissez (générez-en une avec `openssl rand -hex 32`, par exemple).
+Pour redéployer après une modification du code :
 
-Redéployez ensuite (`vercel --prod`) pour que la variable soit prise en compte.
+```bash
+vercel --prod   # depuis ce dossier serverless/, une fois connecté (vercel login)
+```
 
 ## Appeler la fonction
 
 ```
-GET https://<votre-projet>.vercel.app/api/cert?domain=exemple.fr
-Header: X-Vigie-Key: <la clé choisie ci-dessus>
+GET https://serverless-two-tau.vercel.app/api/cert?domain=exemple.fr
+Header: X-Vigie-Key: <la clé, dans serverless/.env>
 ```
 
 Réponses possibles :
@@ -47,5 +49,5 @@ Réponses possibles :
 Dans le module HTTP du scénario A (vérification quotidienne) :
 
 - Méthode : `GET`
-- URL : `https://<votre-projet>.vercel.app/api/cert?domain={{nom_domaine}}`
+- URL : `https://serverless-two-tau.vercel.app/api/cert?domain={{nom_domaine}}`
 - En-têtes : `X-Vigie-Key` → la clé, stockée dans un connecteur/variable Make plutôt qu'écrite en clair dans le scénario.
