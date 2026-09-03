@@ -108,6 +108,8 @@ Domaines ─< Alertes
 
 ### A — Vérification quotidienne (cœur du produit)
 
+**Statut : étapes 1-4 construites et testées en conditions réelles** (scénario Make `7224738`, non activé — voir [`scripts/README.md`](../scripts/README.md#setup-make-scenarioajs-et-airtable-schemajson) pour le détail, les identifiants de modules découverts, et les pièges rencontrés). Étapes 5-7 (calcul des jours restants, mise à jour Airtable, router d'alerte) restent à construire.
+
 Déclenchement : planification, tous les jours à 06h00 (Europe/Paris).
 
 1. **Airtable — Rechercher des enregistrements** : vue `À vérifier aujourd'hui` de `Domaines`.

@@ -1,0 +1,59 @@
+{
+  "Comptes": {
+    "id": "tblvuWyiuiDy1zCc1",
+    "fields": {
+      "Nom du compte": "fldvPbqPcPceebOjS",
+      "Email": "fldSFokK9Eeppon3r",
+      "Type de compte": "fldA3M75TW3hyzgy9",
+      "Offre": "fldhxtc9Zfy7xA8ZL",
+      "Quota domaines": "fldLxnReNHgbwmYFY",
+      "Statut abonnement": "fldEPbwCgISzBNccn",
+      "Stripe Customer ID": "fldihwB6JnWWTENu5",
+      "Stripe Subscription ID": "fldsyFbQzqQSOgkni",
+      "Marque blanche — nom affiché": "fldAcb0lgmmZiwiqd",
+      "Marque blanche — logo": "fld2yU4avOf1gF7lL",
+      "Webhook Slack": "fldMKqbAPioWZyP5V",
+      "Numéro SMS alerte": "fldPfIwOMZoDQosNZ",
+      "Domaines": "fldocrXIHyrK1tz7r",
+      "Clients finaux": "fldOwEeNpima1iWtY"
+    }
+  },
+  "ClientsFinaux": {
+    "id": "tblr3ATO7PvysvskJ",
+    "fields": {
+      "Nom client": "fldTe8aPVYbHlQ2Z2",
+      "Contact (info)": "fldpi1IIf1tXvQQ8a",
+      "Domaines": "fld4xCJ68j9TbXqM9",
+      "Compte parent": "fldjs9g1g1DeO0bSL"
+    }
+  },
+  "Domaines": {
+    "id": "tblrKZ0cOKLY7Q5fk",
+    "fields": {
+      "Nom de domaine": "fldaAkrG4wLBbuSWV",
+      "Actif": "fldufKAupPThSAw5H",
+      "Statut certificat": "fldb5C01xoAo9cFzc",
+      "Date expiration certificat": "fldV2WHcKuXgN5xBj",
+      "Émetteur certificat": "fldRucB4ZwlZVaGj9",
+      "Statut domaine": "fldraI97u8vEtWB41",
+      "Date expiration domaine": "fld9BR54W8EBRG5fr",
+      "Registrar": "fld9jhmLzfJQ0waiB",
+      "Dernière vérification": "fldNM0WKLQnqCSbhU",
+      "Dernière erreur": "fld5nTtOragNcYNJE",
+      "Compte": "fldTy0eVxDmOqPEGI",
+      "Client final": "fldLNdkpD9gKX5KSC",
+      "Alertes": "fldzAT834dNzg0zq8"
+    }
+  },
+  "Alertes": {
+    "id": "tblRcM8YbaKEFuMNr",
+    "fields": {
+      "Date envoi": "fldJERnnT30xbJDk3",
+      "Type": "fldpAA5XmLkQ9CgJX",
+      "Palier": "fldtXgbcr97KJpEAl",
+      "Canal": "fldwQOob4emF0UFdg",
+      "Statut envoi": "fldcCNGXYI9vMCNZS",
+      "Domaine": "fldFVmLzCk5Ruz2vR"
+    }
+  }
+}
