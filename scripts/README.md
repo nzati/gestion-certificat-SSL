@@ -1,5 +1,16 @@
 # Scripts de mise en place
 
+## Portail Softr (pas de script — construit via l'interface, pas d'API pour ça)
+
+Généré via l'IA de Softr Studio, connecté à la base Airtable Vigie. Détail complet, pièges trouvés (noms de champs du webhook, filtrage par compte manquant) et statut : [docs/cahier-des-charges-technique.md § 3](../docs/cahier-des-charges-technique.md#3-flow-softr).
+
+| | |
+|---|---|
+| App | Portail de surveillance SSL/TLS & Domaines |
+| URL publiée | https://nona63293.softr.app |
+| Studio | https://studio.softr.io/applications/a4dd0dfb-6a95-416c-be71-82f5b67a2054 |
+| Statut | Home, Domaines, Ajouter un domaine (branché sur le webhook du scénario B), Domaine Details, Paramètres, Alertes — générés. Testé en conditions réelles (vrai compte, vraie connexion, vrai ajout de domaine vérifié dans Airtable). Filtrage par compte connecté corrigé sur la page Domaines ; un widget "Chart" (compteur) reste non filtré — cosmétique, à reprendre. |
+
 ## `setup-make-scenario-a.js` et `airtable-schema.json`
 
 Construit, via l'API Make (`developers.make.com`), le scénario A (vérification quotidienne) au complet : Airtable Search Records (Domaines, `Actif = TRUE()`) → HTTP vérification certificat → HTTP RDAP → calcul des jours restants → mise à jour Airtable (statuts, dates, dernière vérification) → router d'alerte (certificat / domaine, seuil ≤30j, anti-doublon, envoi email, log dans Alertes). Manquent encore : Slack (webhook HTTP simple, pas de module à vérifier) et SMS/Twilio (offre Agence/MSP) — voir le commentaire de fin de fichier dans le script.

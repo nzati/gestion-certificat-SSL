@@ -170,6 +170,12 @@ Déclenchement : **Webhook Make générique** (pas le module Stripe officiel —
 
 ## 3. Flow Softr
 
+**Statut : app créée et testée en conditions réelles pour le cœur du flow** (générée via l'IA de Softr Studio, connectée à la base Airtable Vigie). Testé avec un vrai compte, publié, connexion réelle par email : la page "Ajouter un domaine" appelle bien le webhook du scénario B (formulaire → Make → vérification immédiate → retour dans le portail), vérifié avec un vrai domaine (`wikipedia.org`) apparaissant avec le bon statut. Pages Clients finaux, Rapports, Paramètres avancés et connexion Stripe pas encore construites.
+
+**Piège trouvé et corrigé — noms de champs du webhook** : le champ caché du formulaire Softr envoie ses valeurs sous le **libellé du champ** (`"Nom de domaine"`, `"Compte"`), pas sous un nom technique du genre `nom_domaine`/`compte_id` comme on pouvait le supposer. Repéré en inspectant le bundle réellement reçu par le webhook Make après un premier essai raté (la branche "quota atteint" se déclenchait à tort, `compte_id` étant vide). Le scénario B a été corrigé pour utiliser `{{1.\`Nom de domaine\`}}` et `{{1.\`Compte\`}}`. Pour le champ "Compte" caché (auteur du formulaire), choisir la valeur dynamique **"Record ID"** de l'utilisateur connecté (pas "Email") — c'est ce qui correspond à l'ID Airtable attendu par `RECORD_ID() = "{{1.\`Compte\`}}"`.
+
+**Bug de sécurité trouvé et corrigé — filtrage par compte manquant** : la page "Domaines" générée par l'IA affichait **tous** les domaines de la base, pas seulement ceux du compte connecté (repéré : un domaine appartenant à aucun compte apparaissait quand même dans la liste d'un utilisateur connecté). Cause : la section "Record filters" du bloc était vide par défaut — Softr ne filtre pas automatiquement par utilisateur connecté, il faut l'ajouter explicitement (Source → Record filters → condition `Compte` `Includes any of` `Nom du compte` [logged-in user]). **Point de vigilance avant d'inviter un vrai client** : vérifier systématiquement le filtrage de chaque page/bloc listant `Domaines` (dashboard Home, page Domaines, page Domaine Details) plutôt que de supposer qu'il est appliqué par défaut. Un widget "Chart" (compteur "Domaines surveillés") reste incohérent après ce correctif (affiche le total non filtré) — cosmétique, pas une fuite de données réelle, à reprendre plus tard.
+
 | Page | Contenu | Visible pour |
 |---|---|---|
 | Connexion / Inscription | Auth native Softr, table utilisateurs liée à `Comptes` par email | tous |
