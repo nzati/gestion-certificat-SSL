@@ -11,7 +11,7 @@ Construit, via l'API Make (`developers.make.com`), le scénario A (vérification
 | Nom | Vigie — A. Vérification quotidienne |
 | Scenario ID | `7224738` |
 | URL | https://eu1.make.com/2629311/scenarios/7224738/edit |
-| Statut | 13 modules — recherche → vérif certificat → vérif RDAP → 3× calcul → mise à jour Airtable → router (certificat/domaine, anti-doublon, envoi email, log). Testé bout en bout sur un vrai enregistrement (`github.com`) : jours restants, statuts, dates, envoi d'email réel et anti-doublon tous confirmés corrects — y compris deux allers-retours où l'anti-doublon s'est révélé cassé en test réel malgré une apparence de succès (voir plus bas). **Pas activé.** |
+| Statut | 13 modules — recherche → vérif certificat → vérif RDAP → 3× calcul → mise à jour Airtable → router (certificat/domaine, anti-doublon, envoi email, log). Testé bout en bout sur un vrai enregistrement (`github.com`) : jours restants, statuts, dates, envoi d'email réel et anti-doublon tous confirmés corrects — y compris deux allers-retours où l'anti-doublon s'est révélé cassé en test réel malgré une apparence de succès (voir plus bas). **Actif depuis le 2026-09-04** — tourne tous les jours à 06:00 Europe/Paris. |
 | Planification | Quotidien 06:00 Europe/Paris |
 
 ### Découvertes faites en le construisant (aucune n'est documentée publiquement de façon fiable — l'API Make n'expose pas de catalogue de modules interrogeable avec les scopes standards)

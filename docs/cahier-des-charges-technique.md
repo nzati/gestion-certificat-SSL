@@ -108,7 +108,7 @@ Domaines ─< Alertes
 
 ### A — Vérification quotidienne (cœur du produit)
 
-**Statut : construit et testé en conditions réelles de bout en bout**, y compris l'envoi d'alerte et l'anti-doublon (scénario Make `7224738`, non activé — voir [`scripts/README.md`](../scripts/README.md#setup-make-scenarioajs-et-airtable-schemajson) pour le détail, les identifiants de modules découverts, et les pièges rencontrés, dont deux vrais bugs Make/Airtable qui donnaient l'illusion de fonctionner). Restent à ajouter : Slack (webhook HTTP simple, pas de nouveau module à vérifier) et SMS/Twilio (offre Agence/MSP).
+**Statut : construit, testé en conditions réelles de bout en bout et actif en production** depuis le 2026-09-04, y compris l'envoi d'alerte et l'anti-doublon (scénario Make `7224738`, tourne tous les jours à 06:00 Europe/Paris — voir [`scripts/README.md`](../scripts/README.md#setup-make-scenarioajs-et-airtable-schemajson) pour le détail, les identifiants de modules découverts, et les pièges rencontrés, dont deux vrais bugs Make/Airtable qui donnaient l'illusion de fonctionner). Restent à ajouter : Slack (webhook HTTP simple, pas de nouveau module à vérifier) et SMS/Twilio (offre Agence/MSP).
 
 Déclenchement : planification, tous les jours à 06h00 (Europe/Paris).
 
