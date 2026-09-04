@@ -131,14 +131,16 @@ Les deux bugs ci-dessus (agrégateur, `ARRAYJOIN`) ont chacun donné l'illusion 
 
 ### B — Ajout d'un domaine (déclenché depuis Softr)
 
-Déclenchement : **Webhook Make personnalisé**, appelé par le formulaire Softr "Ajouter un domaine".
+**Statut : construit et testé en conditions réelles dans les deux cas** (scénario Make `7237349`, non activé — voir [`scripts/README.md`](../scripts/README.md#setup-make-scenariobjs)). Testé : ajout sous quota (domaine créé, vérifié immédiatement, statut correct dans Airtable) et ajout au quota atteint (refusé proprement, aucun enregistrement créé). Non câblés : le champ `Client final` optionnel, et un garde-fou si `compte_id` ne correspond à aucun compte.
 
-1. Webhook reçoit `{ compte_id, nom_domaine, client_final_id? }`.
-2. **Airtable — Rechercher** le nombre de `Domaines` liés à `compte_id`.
-3. **Filtre** : si ce nombre ≥ `Comptes.Quota domaines` → **Webhook response** : erreur `quota_atteint`, message affiché dans Softr ("Passez à l'offre supérieure pour ajouter plus de domaines").
-4. Sinon : **Airtable — Créer un enregistrement** dans `Domaines`.
-5. Appel immédiat des étapes 3-6 du scénario A pour ce domaine (sous-scénario réutilisable, ou dupliqué) — l'utilisateur voit un statut dès l'ajout, pas seulement le lendemain.
-6. **Webhook response** : succès.
+Déclenchement : **Webhook Make personnalisé**, appelé par le formulaire Softr "Ajouter un domaine" — URL : `https://hook.eu1.make.com/heih2dqkyad6uouwfhezkxk9awe1kj2u`.
+
+1. Webhook reçoit `{ compte_id, nom_domaine, client_final_id? }` — un webhook JSON Make expose ses clés directement à plat sur le bundle (`{{1.compte_id}}`), pas de sous-objet à traverser.
+2. **Airtable — Rechercher** le compte (`RECORD_ID() = "{{1.compte_id}}"`) pour lire `Quota domaines` et son nom.
+3. **Airtable — Rechercher** les `Domaines` liés à ce compte (comparaison par **nom** du compte via `ARRAYJOIN({Compte})`, pas par ID — même piège que pour `Alertes` dans le scénario A), puis compter via l'agrégateur COUNT.
+4. **Router** à deux branches, sans opérateur `>=` (seul `number:lessorequal` est vérifié à ce jour) donc comparées dans les deux sens avec le même opérateur :
+   - Route "autorisé" (`compte <= quota - 1`) : **Airtable — Créer un enregistrement** dans `Domaines`, puis la même vérification immédiate que le scénario A (HTTP certificat, HTTP RDAP, calcul des jours restants, mise à jour Airtable) pour que le statut soit disponible dès l'ajout plutôt que d'attendre le lendemain, puis **Webhook response** succès (`{"ok": true, "domaine_id": "..."}`).
+   - Route "quota atteint" (`quota <= compte`) : **Webhook response** erreur (`{"ok": false, "error": "quota_atteint", ...}`), message affiché dans Softr ("Passez à l'offre supérieure pour ajouter plus de domaines").
 
 ### C — Rapport mensuel PDF (offres Pro et Agence/MSP)
 

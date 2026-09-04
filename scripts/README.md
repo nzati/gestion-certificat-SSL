@@ -78,6 +78,28 @@ node scripts/test-rdap.js exemple.fr
 
 Testé sur `.fr`, `.com`, `.net`, `.org` (fonctionnent) et `.de`, `.eu`, `.io` (pas de RDAP public — le script renvoie une erreur explicite plutôt que de planter). Un `User-Agent` de type navigateur/curl est nécessaire : Verisign (registre `.com`) renvoie 403 sans ça.
 
+## `setup-make-scenario-b.js`
+
+Construit le scénario B (ajout de domaine par webhook) via l'API Make : webhook `{compte_id, nom_domaine, client_final_id?}` → recherche du compte et de ses domaines existants → si sous quota, crée le domaine, lance la même vérification immédiate que le scénario A (certificat + RDAP), répond succès ; sinon répond `quota_atteint`. Détails complets et raisonnement dans l'en-tête du script.
+
+### Scénario déjà créé et testé en conditions réelles
+
+| | |
+|---|---|
+| Nom | Vigie — B. Ajout de domaine |
+| Scenario ID | `7237349` |
+| URL Make | https://eu1.make.com/2629311/scenarios/7237349/edit |
+| Webhook | `https://hook.eu1.make.com/heih2dqkyad6uouwfhezkxk9awe1kj2u` (hook id `3661663`) |
+| Statut | Testé en conditions réelles dans les deux cas : sous quota (domaine créé, vérifié, statut correct dans Airtable) et quota atteint (refusé, aucun enregistrement créé). **Pas activé.** |
+
+### Découvertes propres à ce scénario
+
+- Modules : `gateway:CustomWebHook` (déclencheur, `parameters.hook` référence un webhook créé séparément via `POST /api/v2/hooks`, scope `hooks:write`) et `gateway:WebhookRespond` (réponse, `mapper: {status, body, headers}`).
+- Un webhook JSON expose ses clés **directement à plat** sur le bundle (`{{1.compte_id}}`), pas de sous-objet à traverser — confirmé en envoyant une vraie requête de test et en inspectant le bundle capturé.
+- Aucun opérateur `>=` vérifié à ce jour (seulement `number:lessorequal`, voir plus haut) : la vérification de quota compare dans les deux sens avec le même opérateur — route "autorisé" : `compte <= quota - 1` ; route "quota atteint" : `quota <= compte`. Équivalents et complémentaires pour des entiers, donc pas besoin d'un nouvel opérateur ni d'une route "fallback".
+- Le comptage des domaines existants réutilise l'agrégateur COUNT (imprécis à 0 résultat réel, voir plus haut) — sans conséquence ici car les quotas réels sont toujours ≥ 1.
+- Simplifications assumées, non testées : le champ `Client final` (optionnel) n'est pas câblé sur la création, et il n'y a pas de garde-fou si `compte_id` ne correspond à aucun compte réel.
+
 ## `setup-airtable-base.js`
 
 Crée la base Airtable "Vigie" (4 tables + liaisons) via l'API Airtable, telle que décrite dans [le cahier des charges technique](../docs/cahier-des-charges-technique.md#1-schéma-airtable).
