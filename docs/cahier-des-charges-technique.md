@@ -155,11 +155,16 @@ Déclenchement : planification, le 1er de chaque mois à 08h00.
 
 ### D — Synchronisation Stripe → Airtable
 
-Déclenchement : **Webhook Stripe** (module Make Stripe, événements `customer.subscription.created`, `.updated`, `.deleted`, `invoice.payment_failed`).
+**Statut : construit et testé avec des événements simulés** (scénario Make `7237822`, non activé — voir [`scripts/README.md`](../scripts/README.md#setup-make-scenariodjs)). Testé avec le format JSON réel de Stripe (pas un vrai compte Stripe, qui n'existe pas encore) sur les 3 transitions : `subscription.updated` → actif, `payment_failed` → impayé, `subscription.deleted` → annulé, toutes confirmées correctes dans Airtable. `Offre` et `Quota domaines` ne sont **pas câblés** : la correspondance prix Stripe → offre suppose des produits Stripe réels, pas encore créés.
 
-1. **Router** selon `type` d'événement.
-2. **Airtable — Rechercher** le `Compte` par `Stripe Customer ID`.
-3. **Airtable — Mettre à jour** : `Offre`, `Quota domaines`, `Statut abonnement` en fonction de l'événement (ex. `payment_failed` → `impayé`).
+Déclenchement : **Webhook Make générique** (pas le module Stripe officiel — évite une connexion OAuth Stripe ; Stripe POST un JSON standard que n'importe quel webhook reçoit à l'identique) — URL : `https://hook.eu1.make.com/hwmvkwhklzhd8t3laj3oq38vmlhnf7c8`, à coller dans Stripe (Developers → Webhooks → Add endpoint) une fois le compte créé, pour les événements `customer.subscription.created`, `.updated`, `.deleted`, `invoice.payment_failed`.
+
+1. **Airtable — Rechercher** le `Compte` par `Stripe Customer ID` (`{{1.data.object.customer}}` — un webhook Make préserve la structure JSON imbriquée telle quelle, pas d'aplatissement).
+2. **Router** à 3 branches selon `{{1.type}}` :
+   - `customer.subscription.created` ou `.updated` → `Statut abonnement` dérivé du champ Stripe `status` (`active`→`actif`, `trialing`→`essai`, `past_due`/`unpaid`→`impayé`, sinon `annulé`).
+   - `customer.subscription.deleted` → `Statut abonnement = annulé`.
+   - `invoice.payment_failed` → `Statut abonnement = impayé`.
+3. Pas de module "Webhook response" nécessaire : un scénario déclenché par webhook répond automatiquement `Accepted` (HTTP 200), suffisant pour Stripe qui ne regarde que le code de statut.
 
 ---
 

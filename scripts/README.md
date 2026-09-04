@@ -100,6 +100,26 @@ Construit le scénario B (ajout de domaine par webhook) via l'API Make : webhook
 - Le comptage des domaines existants réutilise l'agrégateur COUNT (imprécis à 0 résultat réel, voir plus haut) — sans conséquence ici car les quotas réels sont toujours ≥ 1.
 - Simplifications assumées, non testées : le champ `Client final` (optionnel) n'est pas câblé sur la création, et il n'y a pas de garde-fou si `compte_id` ne correspond à aucun compte réel.
 
+## `setup-make-scenario-d.js`
+
+Construit le scénario D (synchronisation Stripe → Airtable) via l'API Make : webhook générique (pas le module Stripe officiel — pas de connexion OAuth Stripe nécessaire, Stripe POST un JSON standard que n'importe quel webhook peut recevoir) → recherche du compte par `Stripe Customer ID` → routeur à 3 branches par type d'événement → met à jour `Statut abonnement`. `Offre`/`Quota domaines` restent non câblés, faute de correspondance prix Stripe → offre décidée à ce jour (aucun produit Stripe réel créé). Détails complets dans l'en-tête du script.
+
+### Scénario déjà créé et testé en conditions réelles
+
+| | |
+|---|---|
+| Nom | Vigie — D. Synchronisation Stripe |
+| Scenario ID | `7237822` |
+| URL Make | https://eu1.make.com/2629311/scenarios/7237822/edit |
+| Webhook | `https://hook.eu1.make.com/hwmvkwhklzhd8t3laj3oq38vmlhnf7c8` (hook id `3661881`) — à coller dans Stripe (Developers → Webhooks) une fois le compte Stripe créé |
+| Statut | Testé avec 3 événements simulés (format JSON réel de Stripe, pas un vrai compte Stripe) : `customer.subscription.updated` (essai→actif), `invoice.payment_failed` (actif→impayé), `customer.subscription.deleted` (impayé→annulé) — les trois confirmés corrects dans Airtable. **Pas activé.** |
+
+### Découvertes propres à ce scénario
+
+- Un webhook Make **préserve la structure JSON imbriquée telle quelle**, sans aplatissement : pour un payload `{ data: { object: { customer: "..." } } }`, `{{1.data.object.customer}}` fonctionne directement — confirmé en envoyant un payload imbriqué réel et en inspectant le bundle capturé.
+- **`=` fonctionne comme opérateur d'égalité** dans une expression IML (`{{if(1.type = "..."; ...)}}`) — vérifié isolément avant de l'utiliser, puisque seuls `!=` et les opérateurs de filtre avaient été confirmés jusque-là.
+- Un scénario déclenché par webhook **sans module "Webhook response" répond automatiquement `Accepted` / HTTP 200** — suffisant pour Stripe, qui ne regarde que le code de statut, pas le corps de la réponse.
+
 ## `setup-airtable-base.js`
 
 Crée la base Airtable "Vigie" (4 tables + liaisons) via l'API Airtable, telle que décrite dans [le cahier des charges technique](../docs/cahier-des-charges-technique.md#1-schéma-airtable).
