@@ -108,7 +108,7 @@ Domaines ─< Alertes
 
 ### A — Vérification quotidienne (cœur du produit)
 
-**Statut : étapes 1-5 construites et testées en conditions réelles** (scénario Make `7224738`, non activé — voir [`scripts/README.md`](../scripts/README.md#setup-make-scenarioajs-et-airtable-schemajson) pour le détail, les identifiants de modules découverts, et les pièges rencontrés). Reste à construire : le routeur d'alerte (étape 6 ci-dessous — structure déjà vérifiée, modules d'envoi email/Slack/SMS pas encore).
+**Statut : construit et testé en conditions réelles de bout en bout**, y compris l'envoi d'alerte et l'anti-doublon (scénario Make `7224738`, non activé — voir [`scripts/README.md`](../scripts/README.md#setup-make-scenarioajs-et-airtable-schemajson) pour le détail, les identifiants de modules découverts, et les pièges rencontrés, dont deux vrais bugs Make/Airtable qui donnaient l'illusion de fonctionner). Restent à ajouter : Slack (webhook HTTP simple, pas de nouveau module à vérifier) et SMS/Twilio (offre Agence/MSP).
 
 Déclenchement : planification, tous les jours à 06h00 (Europe/Paris).
 
@@ -120,13 +120,14 @@ Déclenchement : planification, tous les jours à 06h00 (Europe/Paris).
    - Réponse `404` avec un autre message : domaine probablement non enregistré ou mal orthographié — même traitement, statut `erreur`.
 4. **Outils — Définir des variables** : calcule `jours_restants_cert` et `jours_restants_domaine` (`(date d'expiration − maintenant) / 86400000`, arrondi). La date d'expiration domaine est d'abord extraite du tableau RDAP `events` via la fonction `map()` avec filtre inline — testé avec de vraies données, aucun module Itérateur nécessaire.
 5. **Airtable — Mettre à jour un enregistrement** : statut (`valide`/`à surveiller` ≤30j/`urgent` ≤7j/`erreur`), dates, `Dernière vérification` = maintenant. Statut = `erreur` si l'étape 2 ou 3 a renvoyé une erreur (ex. domaine injoignable). Module `airtable:ActionUpdateRecords` : la clé `record` s'indexe par **ID de champ** (`fldXXXXXXXXXXXXXX`, voir [`scripts/airtable-schema.json`](../scripts/airtable-schema.json)), jamais par nom, quel que soit le réglage "Use Column ID" ; les champs Airtable de type Date (pas Date+heure) exigent un format `YYYY-MM-DD`, pas un timestamp complet. Détail des formules et pièges IML rencontrés : [`scripts/README.md`](../scripts/README.md#formules-iml-le-langage-dexpression-de-make--pièges-rencontrés-en-câblant-les-étapes-4-à-6).
-6. **Router** à quatre branches par seuil (`jours_restants <= 30`, `<= 14`, `<= 7`, `<= 1`), pour le certificat et pour le domaine :
-   - **Filtre** : `jours_restants` (opérateur numérique `number:lessorequal`, catégorie **"Numeric operators"** dans le menu — pas "Time operators", qui existe aussi et se ressemble). Seuils plutôt qu'égalité stricte : un domaine ajouté avec déjà peu de jours restants déclenche directement les paliers déjà dépassés au lieu de les rater silencieusement en attendant le jour exact.
-   - **Airtable — Rechercher** dans `Alertes` : un envoi existe-t-il déjà pour ce domaine + ce palier ? Si oui → **arrêt** (pas de doublon).
-   - **Router canal** : email toujours ; Slack si `Comptes.Webhook Slack` renseigné ; SMS (module Twilio) si `Comptes.Offre = Agence/MSP` et numéro renseigné.
-   - **Airtable — Créer un enregistrement** dans `Alertes` (log de l'envoi, y compris en cas d'échec).
+6. **Router** à deux branches (certificat, domaine), chacune :
+   - **Filtre d'entrée** : `jours_restants <= 30` (opérateur numérique `number:lessorequal`, catégorie **"Numeric operators"** dans le menu — pas "Time operators", qui existe aussi et se ressemble et piège facilement). Un seuil large plutôt que 4 branches par palier : le palier précis (`J-30`/`J-14`/`J-7`/`J-1`) est calculé à part (étape 4bis, `palier_cert`/`palier_domaine`) et sert à la recherche anti-doublon — un domaine ajouté avec déjà peu de jours restants déclenche directement le palier déjà dépassé au lieu de le rater silencieusement en attendant le jour exact.
+   - **Airtable — Rechercher** dans `Alertes` : un envoi existe-t-il déjà pour ce domaine + ce type + ce palier ? La formule doit comparer par **nom** de domaine (`ARRAYJOIN({Domaine})`) et non par ID — `ARRAYJOIN` sur un champ de liaison renvoie le nom de l'enregistrement lié, pas son ID technique.
+   - **Filtre anti-doublon** : le bundle de recherche a-t-il un `id` réel (`text:equal` contre `""`) ? Si non vide → déjà envoyé, **arrêt**. Ne pas utiliser un agrégateur COUNT pour ça : Search Records émet toujours 1 bundle même à 0 résultat, et COUNT le compte comme `1` aussi bien à 0 qu'à 1 résultat — un filtre `count <= 0` ne passe alors jamais.
+   - **Envoi** : email (`google-email:sendAnEmail`, connexion Gmail OAuth) — construit et testé. Slack (webhook HTTP simple vers `Comptes.Webhook Slack`) et SMS (Twilio, offre Agence/MSP) restent à ajouter.
+   - **Airtable — Créer un enregistrement** dans `Alertes` (log de l'envoi).
 
-Détail de construction (structure JSON du router/filtre, gotcha "Numeric" vs "Time operators") : [`scripts/README.md`](../scripts/README.md#router-et-filtres-découvert-le-2026-09-04).
+Les deux bugs ci-dessus (agrégateur, `ARRAYJOIN`) ont chacun donné l'illusion de marcher avant d'être repérés en vérifiant le résultat concret (email reçu, contenu réel d'Airtable) plutôt que les pastilles vertes du canvas Make. Détail complet, avec la séquence de vérification à reproduire : [`scripts/README.md`](../scripts/README.md#envoi-email-et-anti-doublon-découvert-le-2026-09-04--la-partie-qui-a-le-plus-mal-tourné-avant-de-marcher).
 
 ### B — Ajout d'un domaine (déclenché depuis Softr)
 

@@ -2,22 +2,35 @@
 'use strict';
 
 /**
- * Construit le scénario Make A (vérification quotidienne) via l'API Make :
- * Airtable Search Records (Domaines, Actif=true) → HTTP vérification
- * certificat → HTTP RDAP → calcul des jours restants → mise à jour
- * Airtable. Ne construit PAS encore la branche d'alerte (router, filtre
- * anti-doublon, envoi email/Slack/SMS) — voir la note en bas de ce fichier.
+ * Construit le scénario Make A (vérification quotidienne) via l'API Make,
+ * complet : Airtable Search Records (Domaines, Actif=true) → HTTP
+ * vérification certificat → HTTP RDAP → calcul des jours restants → mise à
+ * jour Airtable → router d'alerte (certificat / domaine), chacun avec
+ * recherche anti-doublon, envoi email et journalisation dans Alertes.
+ * Slack (webhook HTTP simple) et SMS (Twilio) ne sont pas câblés — voir la
+ * note en bas de ce fichier.
  *
  * Les identifiants de modules ci-dessous (airtable:ActionSearchRecords,
- * http:MakeRequest, etc.) ne sont documentés nulle part publiquement de
- * façon fiable : ils ont été découverts en faisant construire un scénario
- * jetable à la main dans l'interface Make, puis en lisant sa blueprint via
+ * http:MakeRequest, builtin:BasicRouter, google-email:sendAnEmail, etc.) ne
+ * sont documentés nulle part publiquement de façon fiable : ils ont été
+ * découverts en faisant construire un scénario jetable à la main dans
+ * l'interface Make, puis en lisant sa blueprint via
  * GET /scenarios/{id}/blueprint. Voir scripts/README.md pour le détail des
- * découvertes (notamment le piège des noms de champs avec espaces).
+ * découvertes — notamment deux bugs réels rencontrés en testant en
+ * conditions réelles (pas juste en lisant la doc) :
+ *   1. L'agrégateur numérique (COUNT) compte les BUNDLES reçus, pas les
+ *      résultats réels — Search Records émet toujours 1 bundle même à 0
+ *      résultat (marqueur __IMTLENGTH__), donc COUNT vaut 1 aussi bien à 0
+ *      qu'à 1 résultat. Inutilisable pour un test d'existence ; ce script
+ *      vérifie directement si le bundle de recherche a un champ "id" réel.
+ *   2. `ARRAYJOIN({ChampLien})` sur un champ de liaison Airtable renvoie le
+ *      NOM (champ principal) des enregistrements liés, pas leur ID — un
+ *      `FIND("recXXX", ARRAYJOIN({Domaine}))` ne matche donc jamais. Il
+ *      faut chercher le nom du domaine, pas son ID.
  *
  * Usage :
  *   MAKE_TOKEN=... MAKE_TEAM_ID=... MAKE_ZONE=eu1.make.com \
- *   AIRTABLE_CONNECTION_ID=... VIGIE_API_KEY=... \
+ *   AIRTABLE_CONNECTION_ID=... GMAIL_CONNECTION_ID=... VIGIE_API_KEY=... \
  *   node scripts/setup-make-scenario-a.js
  *
  * Non idempotent (comme setup-airtable-base.js) : relancer crée un nouveau
@@ -28,11 +41,13 @@ const TOKEN = process.env.MAKE_TOKEN;
 const TEAM_ID = process.env.MAKE_TEAM_ID;
 const ZONE = process.env.MAKE_ZONE || 'eu1.make.com';
 const AIRTABLE_CONNECTION_ID = process.env.AIRTABLE_CONNECTION_ID;
+const GMAIL_CONNECTION_ID = process.env.GMAIL_CONNECTION_ID;
 const VIGIE_API_KEY = process.env.VIGIE_API_KEY;
+const ALERT_EMAIL = process.env.ALERT_EMAIL;
 
-if (!TOKEN || !TEAM_ID || !AIRTABLE_CONNECTION_ID || !VIGIE_API_KEY) {
+if (!TOKEN || !TEAM_ID || !AIRTABLE_CONNECTION_ID || !GMAIL_CONNECTION_ID || !VIGIE_API_KEY || !ALERT_EMAIL) {
   console.error(
-    'Usage : MAKE_TOKEN=... MAKE_TEAM_ID=... AIRTABLE_CONNECTION_ID=... VIGIE_API_KEY=... node scripts/setup-make-scenario-a.js',
+    'Usage : MAKE_TOKEN=... MAKE_TEAM_ID=... AIRTABLE_CONNECTION_ID=... GMAIL_CONNECTION_ID=... VIGIE_API_KEY=... ALERT_EMAIL=... node scripts/setup-make-scenario-a.js',
   );
   process.exit(1);
 }
@@ -40,6 +55,7 @@ if (!TOKEN || !TEAM_ID || !AIRTABLE_CONNECTION_ID || !VIGIE_API_KEY) {
 const airtableSchema = require('./airtable-schema.json');
 const BASE_ID = 'apptozA0MNHsGlSNw';
 const domaines = airtableSchema.Domaines;
+const alertes = airtableSchema.Alertes;
 
 // IMPORTANT : une référence à un champ Airtable dont le nom contient un
 // espace (ex. "Nom de domaine") DOIT être entourée de backticks dans une
@@ -48,6 +64,84 @@ const domaines = airtableSchema.Domaines;
 // une exécution réelle : le module HTTP recevait un paramètre "domain"
 // vide malgré un mapping qui semblait correct dans l'éditeur visuel.
 const domainRef = '{{1.`Nom de domaine`}}';
+
+// Palier le plus urgent déjà franchi — seuils plutôt qu'égalité stricte,
+// voir docs/cahier-des-charges-technique.md section 2.A.
+function palierFormula(joursVar) {
+  return `{{if(${joursVar} <= 1; "J-1"; if(${joursVar} <= 7; "J-7"; if(${joursVar} <= 14; "J-14"; "J-30")))}}`;
+}
+
+// Une branche du router : recherche anti-doublon → envoi email (si pas déjà
+// envoyé) → log dans Alertes. Voir le commentaire d'en-tête pour les deux
+// bugs (agrégateur, ARRAYJOIN) qui ont façonné cette structure.
+function alertBranch({ type, joursVar, palierVar, startId, y }) {
+  const searchId = startId;
+  const sendId = startId + 1;
+  const createId = startId + 2;
+  return {
+    flow: [
+      {
+        id: searchId,
+        module: 'airtable:ActionSearchRecords',
+        version: 3,
+        parameters: { __IMTCONN__: Number(AIRTABLE_CONNECTION_ID) },
+        filter: { name: `seuil-${type}`, conditions: [[{ a: `{{${joursVar}}}`, b: '30', o: 'number:lessorequal' }]] },
+        mapper: {
+          base: BASE_ID,
+          table: alertes.id,
+          useColumnId: false,
+          // Comparer par NOM de domaine, pas par ID — voir bug #2 en en-tête.
+          formula: `AND(FIND("${domainRef}", ARRAYJOIN({Domaine})), {Type}="${type}", {Palier}="{{${palierVar}}}")`,
+          maxRecords: '5',
+        },
+        metadata: { designer: { x: 3000, y } },
+      },
+      {
+        id: sendId,
+        module: 'google-email:sendAnEmail',
+        version: 4,
+        parameters: { __IMTCONN__: Number(GMAIL_CONNECTION_ID) },
+        // "id" vide == aucun enregistrement Alertes trouvé == pas encore
+        // envoyé. Ne pas utiliser un agrégateur COUNT ici — voir bug #1.
+        filter: { name: `pas-deja-envoye-${type}`, conditions: [[{ a: `{{${searchId}.id}}`, b: '', o: 'text:equal' }]] },
+        mapper: {
+          to: [ALERT_EMAIL],
+          subject:
+            type === 'certificat'
+              ? `Vigie — certificat de ${domainRef} : {{${palierVar}}}`
+              : `Vigie — domaine ${domainRef} : {{${palierVar}}}`,
+          bodyType: 'rawHtml',
+          content:
+            type === 'certificat'
+              ? `Le certificat de ${domainRef} expire dans {{${joursVar}}} jours.`
+              : `Le domaine ${domainRef} expire dans {{${joursVar}}} jours.`,
+        },
+        metadata: { designer: { x: 3300, y } },
+      },
+      {
+        id: createId,
+        module: 'airtable:ActionCreateRecord',
+        version: 3,
+        parameters: { __IMTCONN__: Number(AIRTABLE_CONNECTION_ID) },
+        mapper: {
+          base: BASE_ID,
+          table: alertes.id,
+          record: {
+            [alertes.fields['Domaine']]: ['{{1.id}}'],
+            [alertes.fields['Type']]: type,
+            [alertes.fields['Palier']]: `{{${palierVar}}}`,
+            [alertes.fields['Canal']]: 'email',
+            [alertes.fields['Statut envoi']]: 'envoyé',
+            [alertes.fields['Date envoi']]: '{{now}}',
+          },
+          typecast: false,
+          useColumnId: false,
+        },
+        metadata: { designer: { x: 3600, y } },
+      },
+    ],
+  };
+}
 
 const blueprint = {
   name: 'Vigie — A. Vérification quotidienne',
@@ -179,6 +273,41 @@ const blueprint = {
       },
       metadata: { designer: { x: 1800, y: 0 } },
     },
+    {
+      id: 8,
+      module: 'util:SetVariable2',
+      version: 1,
+      parameters: {},
+      mapper: {
+        name: 'palier_cert',
+        scope: 'roundtrip',
+        value: palierFormula('4.jours_restants_cert'),
+      },
+      metadata: { designer: { x: 2100, y: 0 } },
+    },
+    {
+      id: 9,
+      module: 'util:SetVariable2',
+      version: 1,
+      parameters: {},
+      mapper: {
+        name: 'palier_domaine',
+        scope: 'roundtrip',
+        value: palierFormula('6.jours_restants_domaine'),
+      },
+      metadata: { designer: { x: 2400, y: 0 } },
+    },
+    {
+      id: 10,
+      mapper: null,
+      module: 'builtin:BasicRouter',
+      version: 1,
+      routes: [
+        alertBranch({ type: 'certificat', joursVar: '4.jours_restants_cert', palierVar: '8.`palier_cert`', startId: 31, y: 200 }),
+        alertBranch({ type: 'domaine', joursVar: '6.jours_restants_domaine', palierVar: '9.`palier_domaine`', startId: 41, y: 400 }),
+      ],
+      metadata: { designer: { x: 2700, y: 0 } },
+    },
   ],
   metadata: {
     instant: false,
@@ -225,12 +354,14 @@ async function main() {
 main();
 
 /**
- * CE QUI RESTE À CONSTRUIRE (pas encore fait) pour que le scénario A soit
- * complet, voir docs/cahier-des-charges-technique.md section 2.A :
- *   Un router (module "builtin:BasicRouter") à branches par seuil
- *   (jours_restants <= 30/14/7/1, opérateur "number:lessorequal" —
- *   structure et opérateur déjà vérifiés, voir scripts/README.md), chaque
- *   branche avec une recherche Airtable anti-doublon dans Alertes, un envoi
- *   (email / Slack / SMS — identifiants de modules pas encore vérifiés) et
- *   un "airtable:ActionCreateRecord" dans Alertes.
+ * CE QUI RESTE À CONSTRUIRE pour que le scénario A couvre tout le cahier
+ * des charges (voir docs/cahier-des-charges-technique.md section 2.A) :
+ *   - Slack : pas de module à vérifier, c'est un simple POST HTTP vers
+ *     Comptes.Webhook Slack (module "http:MakeRequest" déjà utilisé pour le
+ *     certificat et RDAP) — à ajouter en parallèle de l'envoi email dans
+ *     chaque branche, conditionné à la présence du champ.
+ *   - SMS (Twilio) pour l'offre Agence/MSP : module pas encore vérifié.
+ *   - Résolution du destinataire email réel via Comptes (aujourd'hui
+ *     ALERT_EMAIL est fixe pour les tests) — recherche Airtable sur le
+ *     Compte lié au domaine, ou champ Lookup côté Airtable.
  */

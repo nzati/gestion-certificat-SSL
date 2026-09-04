@@ -2,7 +2,7 @@
 
 ## `setup-make-scenario-a.js` et `airtable-schema.json`
 
-Construit, via l'API Make (`developers.make.com`), le scénario A (vérification quotidienne) : Airtable Search Records (Domaines, `Actif = TRUE()`) → HTTP vérification certificat → HTTP RDAP → calcul des jours restants → mise à jour Airtable (statuts, dates, dernière vérification). La branche d'alerte (router par seuil, anti-doublon, envoi email/Slack/SMS) n'est **pas encore construite** — voir le commentaire de fin de fichier.
+Construit, via l'API Make (`developers.make.com`), le scénario A (vérification quotidienne) au complet : Airtable Search Records (Domaines, `Actif = TRUE()`) → HTTP vérification certificat → HTTP RDAP → calcul des jours restants → mise à jour Airtable (statuts, dates, dernière vérification) → router d'alerte (certificat / domaine, seuil ≤30j, anti-doublon, envoi email, log dans Alertes). Manquent encore : Slack (webhook HTTP simple, pas de module à vérifier) et SMS/Twilio (offre Agence/MSP) — voir le commentaire de fin de fichier dans le script.
 
 ### Scénario déjà créé et testé en conditions réelles
 
@@ -11,7 +11,7 @@ Construit, via l'API Make (`developers.make.com`), le scénario A (vérification
 | Nom | Vigie — A. Vérification quotidienne |
 | Scenario ID | `7224738` |
 | URL | https://eu1.make.com/2629311/scenarios/7224738/edit |
-| Statut | 7 modules (recherche → vérif certificat → vérif RDAP → 3× calcul → mise à jour Airtable), testés bout en bout sur un vrai enregistrement (`github.com`) avec de vraies données — jours restants, statuts et dates confirmés corrects dans Airtable. **Pas activé** |
+| Statut | 13 modules — recherche → vérif certificat → vérif RDAP → 3× calcul → mise à jour Airtable → router (certificat/domaine, anti-doublon, envoi email, log). Testé bout en bout sur un vrai enregistrement (`github.com`) : jours restants, statuts, dates, envoi d'email réel et anti-doublon tous confirmés corrects — y compris deux allers-retours où l'anti-doublon s'est révélé cassé en test réel malgré une apparence de succès (voir plus bas). **Pas activé.** |
 | Planification | Quotidien 06:00 Europe/Paris |
 
 ### Découvertes faites en le construisant (aucune n'est documentée publiquement de façon fiable — l'API Make n'expose pas de catalogue de modules interrogeable avec les scopes standards)
@@ -49,6 +49,17 @@ Structure réelle d'un module Router dans une blueprint Make :
 Opérateurs numériques confirmés : `number:lessorequal` ("Less than or equal to"). Les autres (`number:equal`, `number:greaterorequal`, `number:less`, `number:greater`) suivent vraisemblablement le même schéma de nommage mais n'ont pas été vérifiés individuellement — à confirmer avant de les utiliser, même schéma que ci-dessus.
 
 **Choix de conception qui en découle** : plutôt qu'une égalité stricte `jours_restants = 30 OU 14 OU 7 OU 1` (fragile — un jour de scénario manqué et le palier exact est raté), le routeur du scénario A utilisera des seuils `jours_restants <= 30`, `<= 14`, `<= 7`, `<= 1` sur des routes séparées, chacune avec sa propre recherche anti-doublon dans `Alertes` (par domaine + palier). Un domaine ajouté avec déjà peu de jours restants déclenche alors immédiatement les paliers déjà dépassés, au lieu de les rater silencieusement — plus robuste, et ça n'utilise que l'opérateur déjà confirmé.
+
+### Envoi email et anti-doublon (découvert le 2026-09-04) — la partie qui a le plus mal tourné avant de marcher
+
+Module d'envoi confirmé : `google-email:sendAnEmail` (v4), mapper `{ to: [email...], subject, bodyType: "rawHtml", content }`, connexion Gmail OAuth (`__IMTCONN__`). Reconnecter le compte Gmail redemande parfois le scope d'envoi même si une connexion existe déjà (403 `insufficient authentication scopes` observé) — supprimer et recréer la connexion si ça arrive.
+
+**Deux bugs réels, pas des fautes de frappe, découverts uniquement parce que le résultat concret (email reçu, ligne créée dans Airtable) a été vérifié après chaque changement plutôt que de se fier aux pastilles vertes du canvas** :
+
+1. **L'agrégateur numérique (`util:FunctionAggregator2`, fonction `count`) compte les bundles reçus, pas les résultats réels.** Un module Airtable Search Records émet **toujours au moins 1 bundle**, même à 0 résultat — un bundle "marqueur" portant `__IMTLENGTH__: 0` plutôt que des données réelles. L'agrégateur COUNT compte ce marqueur comme une unité : son résultat vaut `1` aussi bien pour "0 correspondance" que pour "1 correspondance", donc un filtre `count <= 0` ne passe **jamais**, même quand il faudrait. Premier symptôme trompeur : un test a semblé "bien bloquer l'envoi en double" alors qu'en réalité il bloquait *tout le temps*, coïncidence masquée par le fait qu'un doublon existait déjà à ce moment précis. Solution retenue : abandonner l'agrégateur, vérifier directement si le bundle de recherche porte un champ `id` réel (`{{recherche.id}} = ""` via l'opérateur `text:equal` déjà confirmé) plutôt que de compter quoi que ce soit. La sortie réelle de l'agrégateur s'appelle d'ailleurs `result`, pas `value` (piège séparé, repéré avant celui-ci) — son `mapper.value` en entrée sert seulement pour sum/avg/max/min, pas pour count.
+2. **`ARRAYJOIN({ChampLien})` sur un champ de liaison Airtable renvoie le nom (champ principal) des enregistrements liés, pas leur ID.** Une formule de recherche anti-doublon `FIND("recXXXXXXXXXXXXXX", ARRAYJOIN({Domaine}))` ne matche donc **jamais**, même quand le lien existe réellement — `ARRAYJOIN` produit `"github.com"`, pas `"rec1Mt5UEGbMp156K"`. Repéré en observant un vrai doublon créé dans Airtable malgré un enregistrement déjà existant pour le même domaine/type/palier. Corrigé en cherchant `FIND("{{1.\`Nom de domaine\`}}", ARRAYJOIN({Domaine}))` — le nom, pas l'ID.
+
+Séquence de vérification qui a permis de choper ça (à refaire pour toute nouvelle branche de dedup) : (1) envoyer sans condition pour confirmer que l'envoi lui-même marche, (2) vérifier l'enregistrement réel créé dans Airtable — pas seulement le badge vert du canvas, (3) relancer avec la condition anti-doublon active et confirmer qu'aucun second envoi ni doublon Airtable n'apparaît.
 
 ### Formules IML (le langage d'expression de Make) — pièges rencontrés en câblant les étapes 4 à 6
 
