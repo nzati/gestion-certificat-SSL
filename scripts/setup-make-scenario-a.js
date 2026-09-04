@@ -2,11 +2,11 @@
 'use strict';
 
 /**
- * Construit le cœur du scénario Make A (vérification quotidienne) via
- * l'API Make : Airtable Search Records (Domaines, Actif=true) → HTTP
- * vérification certificat → HTTP RDAP. Ne construit PAS encore la branche
- * d'alerte (router, filtre anti-doublon, mise à jour Airtable, envoi
- * email/Slack/SMS) — voir la note en bas de ce fichier.
+ * Construit le scénario Make A (vérification quotidienne) via l'API Make :
+ * Airtable Search Records (Domaines, Actif=true) → HTTP vérification
+ * certificat → HTTP RDAP → calcul des jours restants → mise à jour
+ * Airtable. Ne construit PAS encore la branche d'alerte (router, filtre
+ * anti-doublon, envoi email/Slack/SMS) — voir la note en bas de ce fichier.
  *
  * Les identifiants de modules ci-dessous (airtable:ActionSearchRecords,
  * http:MakeRequest, etc.) ne sont documentés nulle part publiquement de
@@ -104,6 +104,81 @@ const blueprint = {
       },
       metadata: { designer: { x: 600, y: 0 } },
     },
+    {
+      id: 4,
+      module: 'util:SetVariable2',
+      version: 1,
+      parameters: {},
+      mapper: {
+        name: 'jours_restants_cert',
+        scope: 'roundtrip',
+        // Make auto-parse les dates ISO renvoyées par un module HTTP avec
+        // "Parse response" activé, mais parseDate() explicite lève toute
+        // ambiguïté. La soustraction de deux dates donne des millisecondes.
+        value: '{{round((parseDate(2.data.expires_at) - now) / 86400000)}}',
+      },
+      metadata: { designer: { x: 900, y: 0 } },
+    },
+    {
+      id: 5,
+      module: 'util:SetVariable2',
+      version: 1,
+      parameters: {},
+      mapper: {
+        name: 'date_expiration_domaine',
+        scope: 'roundtrip',
+        // map(collection; sortie; clé_filtre; valeur_filtre) : fonction Make
+        // publique (documentée), pas un module caché — évite d'avoir à
+        // vérifier un module Itérateur séparé. "events" n'a pas d'ordre
+        // garanti selon le registre RDAP ; ceci cherche la bonne entrée
+        // plutôt que de supposer un index fixe.
+        value: '{{get(map(3.data.events; "eventDate"; "eventAction"; "expiration"); 1)}}',
+      },
+      metadata: { designer: { x: 1200, y: 0 } },
+    },
+    {
+      id: 6,
+      module: 'util:SetVariable2',
+      version: 1,
+      parameters: {},
+      mapper: {
+        name: 'jours_restants_domaine',
+        scope: 'roundtrip',
+        value: '{{round((parseDate(5.`date_expiration_domaine`) - now) / 86400000)}}',
+      },
+      metadata: { designer: { x: 1500, y: 0 } },
+    },
+    {
+      id: 7,
+      module: 'airtable:ActionUpdateRecords',
+      version: 3,
+      parameters: { __IMTCONN__: Number(AIRTABLE_CONNECTION_ID) },
+      mapper: {
+        id: '{{1.id}}',
+        base: BASE_ID,
+        table: domaines.id,
+        record: {
+          // IMPORTANT : "record" est TOUJOURS keyé par ID de champ
+          // (fldXXXXXXXXXXXXXX), jamais par nom, même avec useColumnId:
+          // false — confirmé en inspectant un module Update configuré à la
+          // main. Voir scripts/README.md.
+          [domaines.fields['Statut certificat']]:
+            '{{if(2.data.error; "erreur"; if(4.jours_restants_cert <= 7; "urgent"; if(4.jours_restants_cert <= 30; "à surveiller"; "valide")))}}',
+          [domaines.fields['Date expiration certificat']]: '{{formatDate(parseDate(2.data.expires_at); "YYYY-MM-DD")}}',
+          [domaines.fields['Émetteur certificat']]: '{{2.data.issuer}}',
+          [domaines.fields['Statut domaine']]:
+            // "!=" et non "<>" — "<>" échoue au parsing IML avec
+            // "Operator next to operator" (confirmé en le testant).
+            '{{if(3.statusCode != 200; "erreur"; if(6.jours_restants_domaine <= 7; "urgent"; if(6.jours_restants_domaine <= 30; "à surveiller"; "valide")))}}',
+          [domaines.fields['Date expiration domaine']]: '{{formatDate(parseDate(5.`date_expiration_domaine`); "YYYY-MM-DD")}}',
+          [domaines.fields['Dernière vérification']]: '{{now}}',
+          [domaines.fields['Dernière erreur']]: '{{2.data.error}}',
+        },
+        typecast: false,
+        useColumnId: false,
+      },
+      metadata: { designer: { x: 1800, y: 0 } },
+    },
   ],
   metadata: {
     instant: false,
@@ -152,21 +227,10 @@ main();
 /**
  * CE QUI RESTE À CONSTRUIRE (pas encore fait) pour que le scénario A soit
  * complet, voir docs/cahier-des-charges-technique.md section 2.A :
- *   5. Set variable(s) : jours_restants_cert / jours_restants_domaine
- *      (soustraction de dates) — module "util:SetVariable2", confirmé
- *      fonctionner mais pas encore câblé ici.
- *   6. Airtable — Update Record sur Domaines (module
- *      "airtable:ActionUpdateRecords", mapper { id, base, table, record:
- *      { <fieldId>: value, ... }, typecast: false, useColumnId: false } —
- *      "record" est TOUJOURS keyé par ID de champ, jamais par nom, même
- *      avec useColumnId=false. Confirmé en inspectant un module configuré
- *      à la main).
- *   7. Router à deux branches (certificat / domaine), chacune avec un
- *      filtre sur le palier, une recherche Airtable anti-doublon dans
- *      Alertes, puis l'envoi (email / Slack / SMS) et un
- *      "airtable:ActionCreateRecord" dans Alertes. La structure exacte
- *      d'un router dans une blueprint Make (builtin:BasicRouter + routes
- *      imbriquées) n'a pas encore été vérifiée sur un exemple réel — à
- *      faire de la même façon que le reste de ce fichier avant de la
- *      construire par API, plutôt que de la deviner.
+ *   Un router (module "builtin:BasicRouter") à branches par seuil
+ *   (jours_restants <= 30/14/7/1, opérateur "number:lessorequal" —
+ *   structure et opérateur déjà vérifiés, voir scripts/README.md), chaque
+ *   branche avec une recherche Airtable anti-doublon dans Alertes, un envoi
+ *   (email / Slack / SMS — identifiants de modules pas encore vérifiés) et
+ *   un "airtable:ActionCreateRecord" dans Alertes.
  */

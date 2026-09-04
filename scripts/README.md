@@ -2,7 +2,7 @@
 
 ## `setup-make-scenario-a.js` et `airtable-schema.json`
 
-Construit, via l'API Make (`developers.make.com`), le début du scénario A (vérification quotidienne) : Airtable Search Records (Domaines, `Actif = TRUE()`) → HTTP vérification certificat → HTTP RDAP. La branche d'alerte (router, anti-doublon, envoi, mise à jour Airtable) n'est **pas encore construite** — voir le commentaire de fin de fichier.
+Construit, via l'API Make (`developers.make.com`), le scénario A (vérification quotidienne) : Airtable Search Records (Domaines, `Actif = TRUE()`) → HTTP vérification certificat → HTTP RDAP → calcul des jours restants → mise à jour Airtable (statuts, dates, dernière vérification). La branche d'alerte (router par seuil, anti-doublon, envoi email/Slack/SMS) n'est **pas encore construite** — voir le commentaire de fin de fichier.
 
 ### Scénario déjà créé et testé en conditions réelles
 
@@ -11,7 +11,7 @@ Construit, via l'API Make (`developers.make.com`), le début du scénario A (vé
 | Nom | Vigie — A. Vérification quotidienne |
 | Scenario ID | `7224738` |
 | URL | https://eu1.make.com/2629311/scenarios/7224738/edit |
-| Statut | Créé, testé (Run once sur un vrai enregistrement `github.com`), **pas activé** |
+| Statut | 7 modules (recherche → vérif certificat → vérif RDAP → 3× calcul → mise à jour Airtable), testés bout en bout sur un vrai enregistrement (`github.com`) avec de vraies données — jours restants, statuts et dates confirmés corrects dans Airtable. **Pas activé** |
 | Planification | Quotidien 06:00 Europe/Paris |
 
 ### Découvertes faites en le construisant (aucune n'est documentée publiquement de façon fiable — l'API Make n'expose pas de catalogue de modules interrogeable avec les scopes standards)
@@ -49,6 +49,13 @@ Structure réelle d'un module Router dans une blueprint Make :
 Opérateurs numériques confirmés : `number:lessorequal` ("Less than or equal to"). Les autres (`number:equal`, `number:greaterorequal`, `number:less`, `number:greater`) suivent vraisemblablement le même schéma de nommage mais n'ont pas été vérifiés individuellement — à confirmer avant de les utiliser, même schéma que ci-dessus.
 
 **Choix de conception qui en découle** : plutôt qu'une égalité stricte `jours_restants = 30 OU 14 OU 7 OU 1` (fragile — un jour de scénario manqué et le palier exact est raté), le routeur du scénario A utilisera des seuils `jours_restants <= 30`, `<= 14`, `<= 7`, `<= 1` sur des routes séparées, chacune avec sa propre recherche anti-doublon dans `Alertes` (par domaine + palier). Un domaine ajouté avec déjà peu de jours restants déclenche alors immédiatement les paliers déjà dépassés, au lieu de les rater silencieusement — plus robuste, et ça n'utilise que l'opérateur déjà confirmé.
+
+### Formules IML (le langage d'expression de Make) — pièges rencontrés en câblant les étapes 4 à 6
+
+- **`<>` n'est pas un opérateur valide** dans une expression IML (`{{...}}`) — erreur au run : `Invalid IML for parameter ... Operator next to operator`. Utiliser `!=`.
+- **Un champ Airtable de type Date (pas Date+heure) rejette un timestamp complet** — erreur `[422] Field "..." cannot accept the provided value`. Formater explicitement : `{{formatDate(parseDate(...); "YYYY-MM-DD")}}` plutôt que de passer la valeur ISO brute (`2026-11-30T23:59:59.000Z`) telle quelle.
+- `map(collection; sortie; clé_filtre; valeur_filtre)` fonctionne bien pour chercher une entrée dans un tableau (ex. l'événement `expiration` dans `events` d'une réponse RDAP) sans avoir besoin d'un module Itérateur séparé — confirmé en le testant avec de vraies données (`get(map(3.data.events; "eventDate"; "eventAction"; "expiration"); 1)` a renvoyé la bonne date).
+- La soustraction de deux dates (`parseDate(...) - now`) renvoie une différence en **millisecondes** — diviser par `86400000` pour obtenir des jours, confirmé avec des valeurs réelles (87 et 35 jours, cohérentes avec les dates constatées).
 
 ## `test-rdap.js`
 
