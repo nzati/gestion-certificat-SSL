@@ -25,6 +25,31 @@ Méthode : faire ajouter un module à la main dans l'éditeur visuel Make (2 min
 - Ajouter un module via le "+" du canvas crée parfois un **scénario séparé** au lieu de l'attacher au flux (arrivé deux fois pendant la construction) — toujours vérifier avec `GET .../blueprint` que le module attendu est bien dans `flow`, pas dans un scénario à côté ni dans `metadata.designer.orphans`.
 - La connexion Airtable créée une fois dans l'UI (`__IMTCONN__`) est réutilisable dans tous les scénarios suivants sans avoir à la recréer.
 
+### Router et filtres (découvert le 2026-09-04)
+
+Structure réelle d'un module Router dans une blueprint Make :
+
+```json
+{
+  "id": 2,
+  "mapper": null,
+  "module": "builtin:BasicRouter",
+  "version": 1,
+  "routes": [
+    { "flow": [ { "id": 3, "filter": { "name": "...", "conditions": [[ {"a": "...", "b": "...", "o": "..."} ]] }, "module": "...", ... } ] },
+    { "flow": [ ... ] }
+  ]
+}
+```
+
+`conditions` est un tableau de groupes **OR**, chaque groupe un tableau de conditions **AND** (`a`/`b` = les deux valeurs, `o` = code opérateur).
+
+**Piège** : l'éditeur visuel propose UNE SEULE entrée "Greater than" par défaut dans la recherche généraliste du menu d'opérateurs, qui se résout en `time:greater` — un opérateur pour les comparaisons de date/heure, pas pour les nombres. Il existe une catégorie séparée **"Numeric operators"** (visible en tapant dans la recherche du menu, ex. "le" pour "less than") avec ses propres codes, ex. `number:lessorequal` pour "Less than or equal to". Toujours vérifier la catégorie affichée dans le menu déroulant ("Numeric operators: ..." vs "Time operators: ..." vs "Datetime operators: ...") avant de valider — ne pas se fier à la première entrée qui matche le texte tapé.
+
+Opérateurs numériques confirmés : `number:lessorequal` ("Less than or equal to"). Les autres (`number:equal`, `number:greaterorequal`, `number:less`, `number:greater`) suivent vraisemblablement le même schéma de nommage mais n'ont pas été vérifiés individuellement — à confirmer avant de les utiliser, même schéma que ci-dessus.
+
+**Choix de conception qui en découle** : plutôt qu'une égalité stricte `jours_restants = 30 OU 14 OU 7 OU 1` (fragile — un jour de scénario manqué et le palier exact est raté), le routeur du scénario A utilisera des seuils `jours_restants <= 30`, `<= 14`, `<= 7`, `<= 1` sur des routes séparées, chacune avec sa propre recherche anti-doublon dans `Alertes` (par domaine + palier). Un domaine ajouté avec déjà peu de jours restants déclenche alors immédiatement les paliers déjà dépassés, au lieu de les rater silencieusement — plus robuste, et ça n'utilise que l'opérateur déjà confirmé.
+
 ## `test-rdap.js`
 
 Vérifie l'expiration d'un nom de domaine via RDAP (le remplaçant standardisé du WHOIS — gratuit, sans clé, réponse JSON). Sert de référence pour le module HTTP + Itérateur/Filtre à construire dans Make (scénario A, étape 4 du [cahier des charges](../docs/cahier-des-charges-technique.md)).

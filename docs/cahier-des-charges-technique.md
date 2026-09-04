@@ -112,20 +112,21 @@ Domaines ─< Alertes
 
 Déclenchement : planification, tous les jours à 06h00 (Europe/Paris).
 
-1. **Airtable — Rechercher des enregistrements** : vue `À vérifier aujourd'hui` de `Domaines`.
-2. **Itérateur** sur chaque domaine.
-3. **HTTP — Faire une requête** (en-tête `X-Vigie-Key: {{clé secrète}}`) vers la fonction serverless maison, déployée sur Vercel : `GET https://serverless-two-tau.vercel.app/api/cert?domain={{nom_domaine}}` → `{ domain, expires_at, issuer, error }`.
-4. **HTTP — Faire une requête** vers RDAP (suit la redirection automatiquement, gratuit, sans clé) : `GET https://rdap.org/domain/{{nom_domaine}}` avec en-têtes `Accept: application/rdap+json` **et `User-Agent: curl/8.21.0`** (testé : sans User-Agent "navigateur/curl", Verisign — le registre de `.com` — renvoie 403 à un client HTTP "machine" ; ça a fait échouer les tests avec le `fetch` par défaut de Node, le module HTTP de Make sera probablement concerné pareil).
+1. **Airtable — Rechercher des enregistrements** : vue `À vérifier aujourd'hui` de `Domaines` (ou `formula: "{Actif} = TRUE()"` en attendant que la vue soit créée). Ce module émet un bundle par domaine trouvé — **pas besoin d'Itérateur séparé**, les modules suivants s'exécutent automatiquement une fois par domaine.
+2. **HTTP — Faire une requête** (en-tête `X-Vigie-Key: {{clé secrète}}`) vers la fonction serverless maison, déployée sur Vercel : `GET https://serverless-two-tau.vercel.app/api/cert?domain={{nom_domaine}}` → `{ domain, expires_at, issuer, error }`.
+3. **HTTP — Faire une requête** vers RDAP (suit la redirection automatiquement, gratuit, sans clé) : `GET https://rdap.org/domain/{{nom_domaine}}` avec en-têtes `Accept: application/rdap+json` **et `User-Agent: curl/8.21.0`** (testé : sans User-Agent "navigateur/curl", Verisign — le registre de `.com` — renvoie 403 à un client HTTP "machine" ; ça a fait échouer les tests avec le `fetch` par défaut de Node, le module HTTP de Make sera probablement concerné pareil).
    - Réponse `200` : chercher dans le tableau `events` l'élément où `eventAction = "expiration"` et lire son `eventDate` — **Itérateur** sur `events` puis **Filtre** `eventAction = expiration` (l'ordre du tableau n'est pas garanti selon le registre, ne pas se fier à un index fixe). Le registrar est dans `entities` (rôle `registrar`), champ `fn` de son `vcardArray`.
    - Réponse `404` avec `title: "No RDAP service is available for this resource"` : **pas d'échec** — certains registres n'exposent pas encore de RDAP public (confirmé en test sur `.de`, `.eu`, `.io` ; `.fr`, `.com`, `.net`, `.org` fonctionnent). Mettre `Domaines.Statut domaine = erreur` avec un message clair plutôt que de faire échouer le scénario.
    - Réponse `404` avec un autre message : domaine probablement non enregistré ou mal orthographié — même traitement, statut `erreur`.
-5. **Outils — Définir des variables** : calcule `jours_restants_cert` et `jours_restants_domaine` (date d'expiration − aujourd'hui).
-6. **Airtable — Mettre à jour un enregistrement** : statut, dates, `Dernière vérification` = maintenant. Statut = `erreur` si l'étape 3 ou 4 a renvoyé une erreur (ex. domaine injoignable).
-7. **Router** à deux branches (certificat / domaine), chacune :
-   - **Filtre** : `jours_restants` ∈ {30, 14, 7, 1} OU `jours_restants ≤ 0`.
+4. **Outils — Définir des variables** : calcule `jours_restants_cert` et `jours_restants_domaine` (date d'expiration − aujourd'hui).
+5. **Airtable — Mettre à jour un enregistrement** : statut, dates, `Dernière vérification` = maintenant. Statut = `erreur` si l'étape 2 ou 3 a renvoyé une erreur (ex. domaine injoignable). Module `airtable:ActionUpdateRecords` : la clé `record` s'indexe par **ID de champ** (`fldXXXXXXXXXXXXXX`, voir [`scripts/airtable-schema.json`](../scripts/airtable-schema.json)), jamais par nom, quel que soit le réglage "Use Column ID".
+6. **Router** à quatre branches par seuil (`jours_restants <= 30`, `<= 14`, `<= 7`, `<= 1`), pour le certificat et pour le domaine :
+   - **Filtre** : `jours_restants` (opérateur numérique `number:lessorequal`, catégorie **"Numeric operators"** dans le menu — pas "Time operators", qui existe aussi et se ressemble). Seuils plutôt qu'égalité stricte : un domaine ajouté avec déjà peu de jours restants déclenche directement les paliers déjà dépassés au lieu de les rater silencieusement en attendant le jour exact.
    - **Airtable — Rechercher** dans `Alertes` : un envoi existe-t-il déjà pour ce domaine + ce palier ? Si oui → **arrêt** (pas de doublon).
    - **Router canal** : email toujours ; Slack si `Comptes.Webhook Slack` renseigné ; SMS (module Twilio) si `Comptes.Offre = Agence/MSP` et numéro renseigné.
    - **Airtable — Créer un enregistrement** dans `Alertes` (log de l'envoi, y compris en cas d'échec).
+
+Détail de construction (structure JSON du router/filtre, gotcha "Numeric" vs "Time operators") : [`scripts/README.md`](../scripts/README.md#router-et-filtres-découvert-le-2026-09-04).
 
 ### B — Ajout d'un domaine (déclenché depuis Softr)
 
