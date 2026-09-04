@@ -131,7 +131,7 @@ Les deux bugs ci-dessus (agrégateur, `ARRAYJOIN`) ont chacun donné l'illusion 
 
 ### B — Ajout d'un domaine (déclenché depuis Softr)
 
-**Statut : construit et testé en conditions réelles dans les deux cas** (scénario Make `7237349`, non activé — voir [`scripts/README.md`](../scripts/README.md#setup-make-scenariobjs)). Testé : ajout sous quota (domaine créé, vérifié immédiatement, statut correct dans Airtable) et ajout au quota atteint (refusé proprement, aucun enregistrement créé). Non câblés : le champ `Client final` optionnel, et un garde-fou si `compte_id` ne correspond à aucun compte.
+**Statut : construit et testé en conditions réelles dans les deux cas** (scénario Make `7237349`, actif — voir [`scripts/README.md`](../scripts/README.md#setup-make-scenariobjs)). Testé : ajout sous quota (domaine créé, vérifié immédiatement, statut correct dans Airtable) et ajout au quota atteint (refusé proprement, aucun enregistrement créé). Non câblés : le champ `Client final` optionnel, et un garde-fou si `compte_id` ne correspond à aucun compte.
 
 Déclenchement : **Webhook Make personnalisé**, appelé par le formulaire Softr "Ajouter un domaine" — URL : `https://hook.eu1.make.com/heih2dqkyad6uouwfhezkxk9awe1kj2u`.
 

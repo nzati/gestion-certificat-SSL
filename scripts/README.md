@@ -90,7 +90,7 @@ Construit le scénario B (ajout de domaine par webhook) via l'API Make : webhook
 | Scenario ID | `7237349` |
 | URL Make | https://eu1.make.com/2629311/scenarios/7237349/edit |
 | Webhook | `https://hook.eu1.make.com/heih2dqkyad6uouwfhezkxk9awe1kj2u` (hook id `3661663`) |
-| Statut | Testé en conditions réelles dans les deux cas : sous quota (domaine créé, vérifié, statut correct dans Airtable) et quota atteint (refusé, aucun enregistrement créé). **Pas activé.** |
+| Statut | Testé en conditions réelles dans les deux cas : sous quota (domaine créé, vérifié, statut correct dans Airtable) et quota atteint (refusé, aucun enregistrement créé). **Actif depuis le 2026-09-04.** |
 
 ### Découvertes propres à ce scénario
 
