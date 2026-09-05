@@ -14,7 +14,12 @@ Taux de TVA créé (`txr_1UCLErCGEQBdWqLB8CVJb7bI`, 20%, France, inclusif) mais 
 
 **Point de vigilance** : le nom affiché sur la page de paiement ("vigie-coformite") vient du nom par défaut du compte Stripe — à corriger dans Stripe → Réglages → Informations sur l'entreprise avant tout partage public du lien.
 
-**Reste à faire** : le scénario D (webhook Stripe → Airtable) ne gère aujourd'hui que la mise à jour d'un `Compte` déjà existant (recherché par `Stripe Customer ID`) — il ne crée pas encore de nouveau `Compte` pour un client qui s'abonne directement via un Payment Link sans compte Airtable préexistant. À construire avant d'utiliser ces liens en conditions réelles avec de vrais clients.
+**Création de compte pour un nouveau client** (fait, testé) : le scénario D crée maintenant un `Compte` (Offre/Quota dérivés de `amount_total`, statut `actif`) quand `checkout.session.completed` arrive et qu'aucun `Compte` n'existe pour ce `Stripe Customer ID`. Testé avec un vrai paiement de test (carte 4242…, aucun argent réel) : compte créé avec tous les bons champs.
+
+**Vrai bug trouvé et corrigé en testant** : Stripe a livré `customer.subscription.created` **avant** `checkout.session.completed` pour un même paiement — l'ordre entre événements liés par une même action n'est pas garanti. La branche de mise à jour du Compte plantait donc avec une 422 Airtable (elle tentait d'écrire sur un `id` vide, puisque le Compte n'existait pas encore). Deux corrections tentées n'ont pas marché avant la bonne, à éviter si vous retombez dessus :
+- `{a: "{{2.id}}", b: "", o: "text:equal", not: true}` — le flag `not` semble ignoré par Make (la branche continuait à matcher et planter, confirmé en le testant en conditions réelles).
+- `{{if(2.id != ""; "trouve"; "pas-trouve")}}` — `2.id` absent vaut probablement `null`/`undefined` plutôt qu'une chaîne vide, et `null != ""` s'évalue à vrai.
+- **Ce qui marche** : `{{if(2.id; "trouve"; "pas-trouve")}}` (test de vérité, pas d'inégalité) — le même style que `{{if(2.data.error; ...)}}` déjà utilisé ailleurs dans ce projet. Ajouté comme condition supplémentaire sur les 3 branches de mise à jour (créée/mise à jour, annulée, paiement échoué) : si le Compte n'est pas encore trouvé, la branche est ignorée silencieusement plutôt que de planter — `checkout.session.completed` finira par créer le compte, avec ou sans cet éventuel événement `subscription.*` arrivé trop tôt.
 
 ## Domaine et déploiement (2026-09-05)
 

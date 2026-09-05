@@ -197,7 +197,7 @@ Permissions Softr : **user groups** par `Offre` pour masquer "Clients" et "Rappo
 
 - Checkout : Payment Link par offre (voir tableau dans `scripts/README.md`), pas encore intégrés dans Softr.
 - Portail client Stripe (gestion/résiliation) : lien direct depuis la page Paramètres Softr — pas encore fait.
-- **Manque encore avant utilisation réelle** : le scénario D ne gère que la mise à jour d'un `Compte` déjà existant (recherché par `Stripe Customer ID`) — il faut ajouter la création d'un nouveau `Compte` pour un client qui s'abonne directement via un Payment Link sans passer par une inscription préalable dans Airtable.
+- **Création de compte pour un nouveau client (fait, testé avec un vrai paiement de test)** : sur `checkout.session.completed`, si aucun `Compte` n'a ce `Stripe Customer ID`, le scénario D en crée un (Offre/Quota dérivés du montant payé, statut `actif`). A révélé un vrai bug d'ordre d'événements Stripe (`customer.subscription.created` peut arriver avant `checkout.session.completed`) — voir [`scripts/README.md`](../scripts/README.md#stripe-2026-09-05-mode-test) pour le garde-fou et les deux tentatives de correctif qui n'ont pas marché avant la bonne.
 - Le scénario D reste la seule source de vérité pour `Statut abonnement` et `Quota domaines` côté Airtable — jamais mis à jour manuellement.
 
 ---

@@ -25,12 +25,27 @@
  *     répond automatiquement `Accepted` / HTTP 200 — suffisant pour
  *     Stripe, qui ne regarde que le code de statut.
  *
- * NON COUVERT — décision volontairement reportée : la mise à jour d'
- * `Offre` et `Quota domaines` à partir du prix Stripe (`data.object.items
- * .data[].price.id`) suppose une correspondance prix → offre qui n'existe
- * pas encore (aucun produit Stripe réel créé à ce jour). Seul
- * `Statut abonnement` est mis à jour, dérivé du champ `status` de Stripe
- * qui est stable et documenté publiquement.
+ * Création de compte (ajouté le 2026-09-05, une fois les vrais produits
+ * Stripe créés — voir scripts/README.md § Stripe) : sur
+ * `checkout.session.completed`, si aucun `Compte` n'a ce
+ * `Stripe Customer ID`, on en crée un. `Offre`/`Quota domaines` sont
+ * dérivés de `amount_total` (900/2900/7900 centimes) plutôt que du Price
+ * ID — plus simple, pas besoin d'appeler l'API Stripe pour résoudre les
+ * line items du checkout, et les 3 montants sont uniques par offre. Email
+ * et nom viennent de `customer_details` (présent uniquement sur
+ * `checkout.session.completed`, pas sur les événements `subscription.*`).
+ * Quota "illimité" de l'offre Agence/MSP encodé comme `99999` (le champ
+ * Airtable est un nombre, pas un texte).
+ *
+ * Testé en conditions réelles avec un vrai paiement de test Stripe (carte
+ * 4242..., aucun argent réel) : compte créé avec les bons Offre/Quota/
+ * Statut/IDs Stripe, retrouvé via `filterByFormula` sur Email. A aussi
+ * révélé un vrai bug en le testant : Stripe a livré `customer.subscription
+ * .created` AVANT `checkout.session.completed` pour un même paiement (l'
+ * ordre entre événements liés n'est pas garanti), ce qui faisait planter
+ * la mise à jour du Compte avec une 422 Airtable puisqu'aucun Compte
+ * n'existait encore. Voir `compteTrouveCondition` plus bas pour le
+ * garde-fou (et les deux tentatives qui n'ont pas marché avant celle-là).
  *
  * Usage :
  *   MAKE_TOKEN=... MAKE_TEAM_ID=... MAKE_ZONE=eu1.make.com \
@@ -57,11 +72,69 @@ const comptes = airtableSchema.Comptes;
 // Mappe le statut d'abonnement Stripe vers nos statuts internes. "status"
 // est un champ Stripe stable et documenté publiquement (contrairement aux
 // ID de prix, propres à chaque compte Stripe).
+// "Compte déjà trouvé" — nécessaire sur les 3 branches de mise à jour pour
+// ne pas planter quand Stripe envoie customer.subscription.created AVANT
+// checkout.session.completed (l'ordre n'est pas garanti, confirmé en
+// conditions réelles : Stripe a livré les deux dans cet ordre pour un
+// même paiement). Sans ce garde-fou, la mise à jour tente d'écrire sur un
+// "id" vide et échoue avec une 422 Airtable peu explicite.
+//
+// PIÈGE : `{a: "{{2.id}}", b: "", o: "text:equal", not: true}` a semblé
+// une solution plus directe mais NE MARCHE PAS — le flag "not" est soit
+// ignoré soit mal interprété par Make (confirmé par un test réel : la
+// branche continuait à matcher et à planter). Idem pour
+// `{{2.id != ""}}` : `2.id` absent vaut probablement `null`/`undefined`
+// plutôt qu'une chaîne vide, et `null != ""` s'évalue à vrai. Le test de
+// vérité `if(2.id; ...)` (déjà utilisé ailleurs dans ce projet, ex.
+// `if(2.data.error; ...)`) fonctionne correctement dans les deux cas.
+const compteTrouveFormula = '{{if(2.id; "trouve"; "pas-trouve")}}';
+const compteTrouveCondition = { a: compteTrouveFormula, b: 'trouve', o: 'text:equal' };
+
 const statutFormula =
   '{{if(1.data.object.status = "active"; "actif"; ' +
   'if(1.data.object.status = "trialing"; "essai"; ' +
   'if(1.data.object.status = "past_due"; "impayé"; ' +
   'if(1.data.object.status = "unpaid"; "impayé"; "annulé"))))}}';
+
+const nomFormula = '{{if(1.data.object.customer_details.name; 1.data.object.customer_details.name; 1.data.object.customer_details.email)}}';
+const offreFormula =
+  '{{if(1.data.object.amount_total = 900; "Essentiel"; ' +
+  'if(1.data.object.amount_total = 2900; "Pro"; "Agence/MSP"))}}';
+const quotaFormula = '{{if(1.data.object.amount_total = 900; 10; if(1.data.object.amount_total = 2900; 50; 99999))}}';
+
+function createCompte(id, y) {
+  return {
+    id,
+    module: 'airtable:ActionCreateRecord',
+    version: 3,
+    parameters: { __IMTCONN__: Number(AIRTABLE_CONNECTION_ID) },
+    filter: {
+      name: 'nouveau-client',
+      conditions: [
+        [
+          { a: '{{1.type}}', b: 'checkout.session.completed', o: 'text:equal' },
+          { a: '{{2.id}}', b: '', o: 'text:equal' },
+        ],
+      ],
+    },
+    mapper: {
+      base: BASE_ID,
+      table: comptes.id,
+      record: {
+        [comptes.fields['Nom du compte']]: nomFormula,
+        [comptes.fields['Email']]: '{{1.data.object.customer_details.email}}',
+        [comptes.fields['Stripe Customer ID']]: '{{1.data.object.customer}}',
+        [comptes.fields['Stripe Subscription ID']]: '{{1.data.object.subscription}}',
+        [comptes.fields['Offre']]: offreFormula,
+        [comptes.fields['Quota domaines']]: quotaFormula,
+        [comptes.fields['Statut abonnement']]: 'actif',
+      },
+      typecast: false,
+      useColumnId: false,
+    },
+    metadata: { designer: { x: 900, y } },
+  };
+}
 
 function updateStatut(id, value, y) {
   return {
@@ -103,8 +176,9 @@ async function main() {
   const hook = hookJson.hook;
   console.log(`Webhook créé : ${hook.id} — URL : ${hook.url}`);
   console.log('À coller dans Stripe (Developers → Webhooks → Add endpoint), événements :');
-  console.log('  customer.subscription.created, customer.subscription.updated,');
-  console.log('  customer.subscription.deleted, invoice.payment_failed');
+  console.log('  checkout.session.completed, customer.subscription.created,');
+  console.log('  customer.subscription.updated, customer.subscription.deleted,');
+  console.log('  invoice.payment_failed');
 
   const blueprint = {
     name: 'Vigie — D. Synchronisation Stripe',
@@ -138,6 +212,11 @@ async function main() {
         version: 1,
         routes: [
           {
+            // Nouveau client : checkout complété et aucun Compte existant
+            // pour ce Stripe Customer ID.
+            flow: [createCompte(41, 400)],
+          },
+          {
             // Abonnement créé ou mis à jour : statut dérivé de Stripe "status".
             flow: [
               {
@@ -145,8 +224,8 @@ async function main() {
                 filter: {
                   name: 'subscription-created-ou-updated',
                   conditions: [
-                    [{ a: '{{1.type}}', b: 'customer.subscription.created', o: 'text:equal' }],
-                    [{ a: '{{1.type}}', b: 'customer.subscription.updated', o: 'text:equal' }],
+                    [{ a: '{{1.type}}', b: 'customer.subscription.created', o: 'text:equal' }, compteTrouveCondition],
+                    [{ a: '{{1.type}}', b: 'customer.subscription.updated', o: 'text:equal' }, compteTrouveCondition],
                   ],
                 },
               },
@@ -159,7 +238,7 @@ async function main() {
                 ...updateStatut(21, 'annulé', 0),
                 filter: {
                   name: 'subscription-deleted',
-                  conditions: [[{ a: '{{1.type}}', b: 'customer.subscription.deleted', o: 'text:equal' }]],
+                  conditions: [[{ a: '{{1.type}}', b: 'customer.subscription.deleted', o: 'text:equal' }, compteTrouveCondition]],
                 },
               },
             ],
@@ -171,7 +250,7 @@ async function main() {
                 ...updateStatut(31, 'impayé', 200),
                 filter: {
                   name: 'payment-failed',
-                  conditions: [[{ a: '{{1.type}}', b: 'invoice.payment_failed', o: 'text:equal' }]],
+                  conditions: [[{ a: '{{1.type}}', b: 'invoice.payment_failed', o: 'text:equal' }, compteTrouveCondition]],
                 },
               },
             ],
