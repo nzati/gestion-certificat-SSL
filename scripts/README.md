@@ -21,6 +21,22 @@ Taux de TVA créé (`txr_1UCLErCGEQBdWqLB8CVJb7bI`, 20%, France, inclusif) mais 
 - `{{if(2.id != ""; "trouve"; "pas-trouve")}}` — `2.id` absent vaut probablement `null`/`undefined` plutôt qu'une chaîne vide, et `null != ""` s'évalue à vrai.
 - **Ce qui marche** : `{{if(2.id; "trouve"; "pas-trouve")}}` (test de vérité, pas d'inégalité) — le même style que `{{if(2.data.error; ...)}}` déjà utilisé ailleurs dans ce projet. Ajouté comme condition supplémentaire sur les 3 branches de mise à jour (créée/mise à jour, annulée, paiement échoué) : si le Compte n'est pas encore trouvé, la branche est ignorée silencieusement plutôt que de planter — `checkout.session.completed` finira par créer le compte, avec ou sans cet éventuel événement `subscription.*` arrivé trop tôt.
 
+### Passage en mode live (2026-09-05)
+
+Compte Stripe déjà activé pour le live (`charges_enabled`/`payouts_enabled`/`details_submitted` tous `true` — pas de KYC à faire). Clé utilisée : une **clé restreinte** (`rk_live_...`), pas la clé secrète complète — écriture seule sur `Products`, `Prices`, `Payment Links`, `Webhook Endpoints`, `Tax Rates`. Mêmes montants et même config que le mode test (`tax_behavior: inclusive`, `automatic_tax`, `tax_code: txcd_10103000`) — objets entièrement séparés du mode test comme toujours chez Stripe, donc tout recréé de zéro.
+
+**Point de vigilance découvert** : le compte Stripe (`vigie-coformite`) contient déjà des produits live d'un autre projet sans rapport ("Essentiel 89€/mois", conformité RGPD) — ne pas y toucher, uniquement ajouté les 3 produits Vigie à côté.
+
+| Offre | Product ID (live) | Price ID (live) | Payment Link (live) |
+|---|---|---|---|
+| Essentiel (9€) | `prod_VClsBHwMTpxEA6` | `price_1UCMKoCGEQBdWqLBx6WSqeWI` | https://buy.stripe.com/00wbJ09v00VP58UfGF5gc00 |
+| Pro (29€) | `prod_VCls4BO9JUZs7C` | `price_1UCMKpCGEQBdWqLB3uzLtJR5` | https://buy.stripe.com/9B6bJ04aGgUNategKJ5gc01 |
+| Agence/MSP (79€) | `prod_VClsbDthZNrgLb` | `price_1UCMKpCGEQBdWqLBsLwYAyZT` | https://buy.stripe.com/fZu4gybD81ZTdFq7a95gc02 |
+
+Webhook live créé (`we_1UCMLICGEQBdWqLB0Xn9GB6a`) pointant vers le **même** webhook Make que le mode test (`https://hook.eu1.make.com/hwmvkwhklzhd8t3laj3oq38vmlhnf7c8`) — Make ne distingue pas test/live, il traite le JSON reçu tel quel ; seuls les montants (900/2900/7900, identiques aux deux modes) déterminent Offre/Quota dans le scénario D.
+
+**Limite de plan Make rencontrée** : le plan gratuit limite à 2 scénarios actifs simultanément — impossible d'activer D pendant que A et B tournaient. Résolu en passant au plan payant "Core" (10,59$/mois), qui lève la limite. Les 3 scénarios (A, B, D) sont maintenant actifs en même temps.
+
 ## Domaine et déploiement (2026-09-05)
 
 `govigie.com` acheté chez IONOS (avec `.fr`/`.info`/`.store` en défensif), DNS pointé à la main (pas d'API IONOS utilisée) :
