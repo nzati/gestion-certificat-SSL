@@ -1,5 +1,21 @@
 # Scripts de mise en place
 
+## Stripe (2026-09-05, mode test)
+
+Facturation **avec TVA**, prix TTC fixes (9€/29€/79€ quelle que soit la TVA — `tax_behavior: inclusive` sur chaque Price, pas de TVA ajoutée par-dessus). Testé en conditions réelles via un Payment Link ouvert dans le navigateur : la page affiche bien `Sous-total 9,00€ / TVA 1,50€ / Total dû aujourd'hui 9,00€` (7,50€ HT + 1,50€ TVA = 9€ TTC).
+
+| Offre | Product ID | Price ID | Payment Link |
+|---|---|---|---|
+| Essentiel (9€) | `prod_VCkkF12EIYRLJa` | `price_1UCLF7CGEQBdWqLByZaS6x2s` | https://buy.stripe.com/test_00wbJ09v00VP58UfGF5gc00 |
+| Pro (29€) | `prod_VCkkGZlbMd1d5n` | `price_1UCLF8CGEQBdWqLBhtu1Shmk` | https://buy.stripe.com/test_9B6bJ04aGgUNategKJ5gc01 |
+| Agence/MSP (79€) | `prod_VCkk0Q5E199wMC` | `price_1UCLF8CGEQBdWqLBPQbI7Ykk` | https://buy.stripe.com/test_fZu4gybD81ZTdFq7a95gc02 |
+
+Taux de TVA créé (`txr_1UCLErCGEQBdWqLB8CVJb7bI`, 20%, France, inclusif) mais **pas utilisable directement sur un Payment Link** (`line_items[].tax_rates` renvoie `parameter_unknown`) — les Payment Links calculent la taxe via `automatic_tax[enabled]=true` à la place, qui exige que chaque Product ait un `tax_code` (utilisé : `txcd_10103000`, "Software as a service (SaaS) — business use"), sans quoi l'API renvoie une erreur "Managed Payments" peu explicite au premier abord.
+
+**Point de vigilance** : le nom affiché sur la page de paiement ("vigie-coformite") vient du nom par défaut du compte Stripe — à corriger dans Stripe → Réglages → Informations sur l'entreprise avant tout partage public du lien.
+
+**Reste à faire** : le scénario D (webhook Stripe → Airtable) ne gère aujourd'hui que la mise à jour d'un `Compte` déjà existant (recherché par `Stripe Customer ID`) — il ne crée pas encore de nouveau `Compte` pour un client qui s'abonne directement via un Payment Link sans compte Airtable préexistant. À construire avant d'utiliser ces liens en conditions réelles avec de vrais clients.
+
 ## Domaine et déploiement (2026-09-05)
 
 `govigie.com` acheté chez IONOS (avec `.fr`/`.info`/`.store` en défensif), DNS pointé à la main (pas d'API IONOS utilisée) :

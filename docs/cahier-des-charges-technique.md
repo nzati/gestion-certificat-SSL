@@ -193,10 +193,12 @@ Permissions Softr : **user groups** par `Offre` pour masquer "Clients" et "Rappo
 
 ## 4. Synchronisation Stripe
 
-- Produits Stripe : trois prix récurrents (Essentiel, Pro, Agence/MSP) + tarif "fondateur" en Coupon à durée illimitée pour les 100 premiers inscrits.
-- Checkout : bloc Stripe Softr ou Payment Link par offre, `client_reference_id` = `Comptes.record_id` Airtable pour le rapprochement.
-- Portail client Stripe (gestion/résiliation) : lien direct depuis la page Paramètres Softr.
-- Le scénario D (ci-dessus) est la seule source de vérité pour `Statut abonnement` et `Quota domaines` côté Airtable — jamais mis à jour manuellement.
+**Statut : produits, prix et Payment Links créés et testés en mode test** (voir [`scripts/README.md`](../scripts/README.md#stripe-2026-09-05-mode-test)). Facturation **avec TVA**, prix **TTC fixes** (9€/29€/79€, quelle que soit la TVA — décision explicite plutôt que HT + TVA en plus) via `tax_behavior: inclusive` sur chaque Price. Le tarif "fondateur" n'est **pas** implémenté via un Coupon Stripe : plus simple et plus standard, chaque prix créé aujourd'hui (9/29/79€) restera figé pour les abonnements qui l'utilisent même si le prix public change plus tard pour les nouveaux inscrits (comportement natif d'un Price Stripe) — il suffira de créer de nouveaux Price à un tarif plus élevé pour les 101e inscrits et de ne plus proposer les Payment Links actuels, sans toucher aux abonnés déjà en cours.
+
+- Checkout : Payment Link par offre (voir tableau dans `scripts/README.md`), pas encore intégrés dans Softr.
+- Portail client Stripe (gestion/résiliation) : lien direct depuis la page Paramètres Softr — pas encore fait.
+- **Manque encore avant utilisation réelle** : le scénario D ne gère que la mise à jour d'un `Compte` déjà existant (recherché par `Stripe Customer ID`) — il faut ajouter la création d'un nouveau `Compte` pour un client qui s'abonne directement via un Payment Link sans passer par une inscription préalable dans Airtable.
+- Le scénario D reste la seule source de vérité pour `Statut abonnement` et `Quota domaines` côté Airtable — jamais mis à jour manuellement.
 
 ---
 
