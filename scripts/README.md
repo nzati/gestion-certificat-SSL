@@ -1,5 +1,18 @@
 # Scripts de mise en place
 
+## Domaine et déploiement (2026-09-05)
+
+`govigie.com` acheté chez IONOS (avec `.fr`/`.info`/`.store` en défensif), DNS pointé à la main (pas d'API IONOS utilisée) :
+
+| Domaine | Cible | Type | Détail |
+|---|---|---|---|
+| `govigie.com` | Landing page (Vercel, projet `landing`) | A → `216.198.79.1` (+ `64.29.17.1`) | Enregistrements recommandés par l'API Vercel (`GET /v6/domains/{domain}/config`) |
+| `www.govigie.com` | idem | CNAME → `9418a51487ebb286.vercel-dns-017.com.` | idem |
+| `app.govigie.com` | Portail Softr | A → `35.158.87.123` | Valeur donnée par Softr (Publish → Custom Domain) |
+| `govigie.fr` / `.info` / `.store` | Redirection HTTP vers `https://www.govigie.com` | Redirection de domaine IONOS (pas un enregistrement DNS) | Option "Configurer également pour les sous-domaines www" cochée |
+
+Certificat HTTPS provisionné automatiquement par Vercel en quelques minutes après vérification du domaine ; Softr prévient que ça peut prendre "quelques heures" (a marché en pratique en quelques minutes aussi). Le projet Vercel `landing` a été déployé et lié en réutilisant le même mécanisme que `serverless/` (variables d'environnement `VERCEL_ORG_ID`/`VERCEL_PROJECT_ID` pour cibler un projet précis en déployant depuis la racine du repo, sans écraser le fichier `.vercel/project.json` déjà lié à `serverless`).
+
 ## Portail Softr (pas de script — construit via l'interface, pas d'API pour ça)
 
 Généré via l'IA de Softr Studio, connecté à la base Airtable Vigie. Détail complet, pièges trouvés (noms de champs du webhook, filtrage par compte manquant) et statut : [docs/cahier-des-charges-technique.md § 3](../docs/cahier-des-charges-technique.md#3-flow-softr).
@@ -7,7 +20,7 @@ Généré via l'IA de Softr Studio, connecté à la base Airtable Vigie. Détail
 | | |
 |---|---|
 | App | Portail de surveillance SSL/TLS & Domaines |
-| URL publiée | https://nona63293.softr.app |
+| URL publiée | https://app.govigie.com (domaine personnalisé ; sous-domaine Softr d'origine : https://nona63293.softr.app) |
 | Studio | https://studio.softr.io/applications/a4dd0dfb-6a95-416c-be71-82f5b67a2054 |
 | Statut | Home, Domaines, Ajouter un domaine (branché sur le webhook du scénario B), Domaine Details, Paramètres, Alertes — générés. Testé en conditions réelles (vrai compte, vraie connexion, vrai ajout de domaine vérifié dans Airtable). Filtrage par compte connecté corrigé sur la page Domaines ; un widget "Chart" (compteur) reste non filtré — cosmétique, à reprendre. |
 
